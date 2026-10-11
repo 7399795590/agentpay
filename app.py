@@ -5,6 +5,7 @@ from flask_cors import CORS
 
 from database import db, init_db
 from models import Agent, Transaction
+from webhooks import fire_webhook
 
 app = Flask(__name__)
 CORS(app)
@@ -59,7 +60,10 @@ def create_agent():
     name = (data.get("name") or "").strip()
     if not name or len(name) > 100:
         return error("Invalid name (required, max 100 chars)")
-    agent = Agent(name=name)
+    webhook_url = (data.get("webhook_url") or "").strip() or None
+    if webhook_url and not webhook_url.startswith(("http://", "https://")):
+        return error("webhook_url must start with http:// or https://")
+    agent = Agent(name=name, webhook_url=webhook_url)
     db.session.add(agent)
     db.session.commit()
     return success({"agent": agent.to_dict(), "api_key": agent.api_key}, 201)
@@ -88,6 +92,7 @@ def topup(agent_id):
                      description=data.get("description", "Top-up"))
     db.session.add(tx)
     db.session.commit()
+    fire_webhook(agent, "topup", tx)
     return success({"agent": agent.to_dict(), "transaction": tx.to_dict()})
 
 
@@ -108,6 +113,7 @@ def charge(agent_id):
                      description=data.get("description", "Charge"))
     db.session.add(tx)
     db.session.commit()
+    fire_webhook(agent, "charge", tx)
     return success({"agent": agent.to_dict(), "transaction": tx.to_dict()})
 
 

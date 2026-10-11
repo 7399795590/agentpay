@@ -17,6 +17,7 @@ class Agent(db.Model):
     name = db.Column(db.String(100), nullable=False)
     api_key = db.Column(db.String(64), unique=True, nullable=False, default=generate_api_key)
     balance = db.Column(db.Integer, default=0)  # in cents
+    webhook_url = db.Column(db.String(500), nullable=True)
     created_at = db.Column(db.Integer, default=lambda: int(time.time()))
 
     transactions = db.relationship("Transaction", backref="agent", lazy=True)
@@ -27,6 +28,7 @@ class Agent(db.Model):
             "name": self.name,
             "balance": self.balance,
             "balance_display": f"${self.balance / 100:.2f}",
+            "webhook_url": self.webhook_url,
             "created_at": self.created_at,
         }
 
