@@ -22,13 +22,9 @@ jobs:
           python-version: ${{ matrix.python-version }}
 
       - name: Install dependencies
-        run: pip install -r requirements.txt
-
-      - name: Check syntax
         run: |
-          python -c "import ast; ast.parse(open('app.py').read()); print('app.py OK')"
-          python -c "import ast; ast.parse(open('database.py').read()); print('database.py OK')"
-          python -c "import ast; ast.parse(open('models.py').read()); print('models.py OK')"
+          pip install -r requirements.txt
+          pip install pytest
 
-      - name: Import test
-        run: python -c "from app import app; print('App imports OK')"
+      - name: Run pytest
+        run: python -m pytest tests/ -v
