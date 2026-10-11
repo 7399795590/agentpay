@@ -128,6 +128,25 @@ def key_ip(request, **kwargs):
     return f"ip:{request.remote_addr}"
 
 
+def require_admin(view_func):
+    """Decorator: requires ADMIN_API_KEY in Authorization header."""
+    from functools import wraps
+    import os
+    @wraps(view_func)
+    def wrapper(*args, **kwargs):
+        admin_key = os.environ.get("ADMIN_API_KEY", "")
+        if not admin_key:
+            return error("Admin API is disabled (ADMIN_API_KEY not set)", 503)
+        auth = request.headers.get("Authorization", "")
+        if not auth.startswith("Bearer "):
+            return error("Missing Authorization (use: Bearer <ADMIN_API_KEY>)", 401)
+        token = auth[7:].strip()
+        if token != admin_key:
+            return error("Invalid admin key", 403)
+        return view_func(*args, **kwargs)
+    return wrapper
+
+
 def key_agent(request, **kwargs):
     """Rate limit key: by agent_id."""
     return f"agent:{kwargs.get('agent_id', 'unknown')}"
@@ -298,6 +317,96 @@ def redoc_ui():
 </body>
 </html>"""
     return app.response_class(response=html, status=200, mimetype="text/html")
+
+
+# ===== Admin API =====
+
+@app.route("/admin/stats")
+@require_admin
+def admin_stats():
+    """Get overall system stats."""
+    total_agents = Agent.query.count()
+    total_txs = Transaction.query.count()
+    total_subs = Subscription.query.count()
+    active_subs = Subscription.query.filter_by(status="active").count()
+    # Sum balances grouped by currency
+    balances = {}
+    for agent in Agent.query.all():
+        cur = agent.currency
+        balances[cur] = balances.get(cur, 0) + agent.balance
+    # Sum by transaction type
+    tx_by_type = {}
+    for tx in Transaction.query.all():
+        tx_by_type[tx.type] = tx_by_type.get(tx.type, 0) + tx.amount
+    return success({
+        "agents": {"total": total_agents},
+        "transactions": {"total": total_txs, "by_type": tx_by_type},
+        "subscriptions": {"total": total_subs, "active": active_subs},
+        "balances": balances,
+    })
+
+
+@app.route("/admin/agents")
+@require_admin
+def admin_list_agents():
+    """List all agents (with optional search)."""
+    q = request.args.get("q", "").strip()
+    try:
+        limit_n = min(int(request.args.get("limit", 50)), 500)
+    except ValueError:
+        return error("Invalid limit")
+    query = Agent.query
+    if q:
+        query = query.filter(Agent.name.like(f"%{q}%"))
+    agents = query.order_by(Agent.created_at.desc()).limit(limit_n).all()
+    return success({"agents": [a.to_dict() for a in agents], "count": len(agents)})
+
+
+@app.route("/admin/agents/<agent_id>", methods=["DELETE"])
+@require_admin
+def admin_delete_agent(agent_id):
+    """Delete an agent and all its transactions/subscriptions."""
+    agent = find_agent(agent_id)
+    if not agent:
+        return error("Agent not found", 404)
+    Subscription.query.filter_by(agent_id=agent.id).delete()
+    Transaction.query.filter_by(agent_id=agent.id).delete()
+    db.session.delete(agent)
+    write_audit("admin.agent.delete", agent_id=agent_id,
+                ip=request.remote_addr,
+                actor="admin")
+    db.session.commit()
+    return success({"deleted": agent_id})
+
+
+@app.route("/admin/agents/<agent_id>/balance", methods=["POST"])
+@require_admin
+def admin_set_balance(agent_id):
+    """Set an agent's balance directly (admin override)."""
+    agent = find_agent(agent_id)
+    if not agent:
+        return error("Agent not found", 404)
+    data = request.get_json(silent=True) or {}
+    new_balance = data.get("balance")
+    if not isinstance(new_balance, int) or new_balance < 0:
+        return error("balance must be a non-negative integer (in smallest unit)")
+    old_balance = agent.balance
+    diff = new_balance - old_balance
+    agent.balance = new_balance
+    tx = Transaction(
+        agent_id=agent.id,
+        type="admin_adjust" if diff >= 0 else "admin_adjust",
+        amount=abs(diff),
+        description=f"Admin: {old_balance} -> {new_balance}",
+    )
+    db.session.add(tx)
+    db.session.flush()
+    write_audit("admin.balance.set", agent_id=agent.id,
+                ip=request.remote_addr, actor="admin",
+                old_balance=old_balance, new_balance=new_balance,
+                tx_id=tx.id)
+    db.session.commit()
+    return success({"agent": agent.to_dict(), "transaction": tx.to_dict()})
 
 
 # ===== Audit Log =====
