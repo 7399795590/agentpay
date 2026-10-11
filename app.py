@@ -22,7 +22,7 @@ def success(data=None, code=200):
 
 
 def find_agent(agent_id):
-    return Agent.query.get(agent_id)
+    return db.session.get(Agent, agent_id)
 
 
 # ===== Routes =====
