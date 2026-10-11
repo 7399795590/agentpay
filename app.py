@@ -7,10 +7,84 @@ from database import db, init_db
 from models import Agent, Transaction
 from webhooks import fire_webhook
 from ratelimit import limit, limiter
+from logging_utils import setup_logging, generate_request_id
 
 app = Flask(__name__)
 CORS(app)
 init_db(app)
+
+# Setup structured logging
+setup_logging(app)
+
+
+# ===== Request ID + Error Handlers =====
+
+@app.before_request
+def before_request():
+    """Generate a request ID and store it in g."""
+    from flask import g
+    g.request_id = generate_request_id()
+
+
+@app.after_request
+def after_request(response):
+    """Add request ID to response headers."""
+    from flask import g
+    if hasattr(g, "request_id"):
+        response.headers["X-Request-ID"] = g.request_id
+    return response
+
+
+@app.errorhandler(400)
+def handle_400(e):
+    return jsonify({"ok": False, "error": "Bad request", "detail": str(e)}), 400
+
+
+@app.errorhandler(401)
+def handle_401(e):
+    return jsonify({"ok": False, "error": "Unauthorized"}), 401
+
+
+@app.errorhandler(403)
+def handle_403(e):
+    return jsonify({"ok": False, "error": "Forbidden"}), 403
+
+
+@app.errorhandler(404)
+def handle_404(e):
+    return jsonify({"ok": False, "error": "Not found"}), 404
+
+
+@app.errorhandler(405)
+def handle_405(e):
+    return jsonify({"ok": False, "error": "Method not allowed"}), 405
+
+
+@app.errorhandler(429)
+def handle_429(e):
+    return jsonify({"ok": False, "error": "Too many requests"}), 429
+
+
+@app.errorhandler(500)
+def handle_500(e):
+    from flask import g
+    app.logger.error(f"Internal error: {e}", exc_info=True)
+    return jsonify({
+        "ok": False,
+        "error": "Internal server error",
+        "request_id": getattr(g, "request_id", None),
+    }), 500
+
+
+@app.errorhandler(Exception)
+def handle_unexpected(e):
+    from flask import g
+    app.logger.error(f"Unexpected error: {e}", exc_info=True)
+    return jsonify({
+        "ok": False,
+        "error": "Internal server error",
+        "request_id": getattr(g, "request_id", None),
+    }), 500
 
 
 # ===== Helpers =====
