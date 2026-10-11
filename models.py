@@ -101,3 +101,54 @@ class Subscription(db.Model):
             "cancelled_at": self.cancelled_at,
         }
 
+class AuditLog(db.Model):
+    """Audit log: track all sensitive operations."""
+    __tablename__ = "audit_logs"
+
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    timestamp = db.Column(db.Integer, default=lambda: int(time.time()), index=True)
+    action = db.Column(db.String(50), nullable=False, index=True)
+    agent_id = db.Column(db.String(32), nullable=True, index=True)
+    actor = db.Column(db.String(100), nullable=True)  # API key prefix or "admin"
+    ip = db.Column(db.String(45), nullable=True)
+    user_agent = db.Column(db.String(200), nullable=True)
+    metadata_json = db.Column(db.Text, nullable=True)  # JSON blob
+    status = db.Column(db.String(20), default="ok")  # ok, error
+
+    def to_dict(self):
+        import json
+        meta = {}
+        if self.metadata_json:
+            try:
+                meta = json.loads(self.metadata_json)
+            except Exception:
+                meta = {"raw": self.metadata_json}
+        return {
+            "id": self.id,
+            "timestamp": self.timestamp,
+            "action": self.action,
+            "agent_id": self.agent_id,
+            "actor": self.actor,
+            "ip": self.ip,
+            "user_agent": self.user_agent,
+            "status": self.status,
+            "metadata": meta,
+        }
+
+
+def write_audit(action, agent_id=None, actor=None, ip=None, user_agent=None, status="ok", **metadata):
+    """Helper to write an audit log entry."""
+    import json
+    entry = AuditLog(
+        action=action,
+        agent_id=agent_id,
+        actor=actor,
+        ip=ip,
+        user_agent=user_agent,
+        status=status,
+        metadata_json=json.dumps(metadata) if metadata else None,
+    )
+    db.session.add(entry)
+    # Note: does NOT commit — caller commits with their transaction
+    return entry
+

@@ -4,7 +4,7 @@ from flask import Flask, request, jsonify
 from flask_cors import CORS
 
 from database import db, init_db
-from models import Agent, Transaction, Subscription
+from models import Agent, Transaction, Subscription, AuditLog, write_audit
 from webhooks import fire_webhook
 from ratelimit import limit, limiter
 from logging_utils import setup_logging, generate_request_id
@@ -156,6 +156,10 @@ def create_agent():
         return error(f"Unsupported currency. Choose from: {SUPPORTED_CURRENCIES}")
     agent = Agent(name=name, webhook_url=webhook_url, currency=currency)
     db.session.add(agent)
+    db.session.flush()
+    write_audit("agent.create", agent_id=agent.id, ip=request.remote_addr,
+                user_agent=request.headers.get("User-Agent", "")[:200],
+                name=name, currency=currency, webhook_url=webhook_url or None)
     db.session.commit()
     return success({"agent": agent.to_dict(), "api_key": agent.api_key}, 201)
 
@@ -184,6 +188,11 @@ def topup(agent_id):
     tx = Transaction(agent_id=agent.id, type="topup", amount=amount,
                      description=data.get("description", "Top-up"))
     db.session.add(tx)
+    db.session.flush()
+    write_audit("topup", agent_id=agent.id, ip=request.remote_addr,
+                user_agent=request.headers.get("User-Agent", "")[:200],
+                actor=agent.api_key[:10] + "...",
+                amount=amount, tx_id=tx.id, description=tx.description)
     db.session.commit()
     fire_webhook(agent, "topup", tx)
     return success({"agent": agent.to_dict(), "transaction": tx.to_dict()})
@@ -206,6 +215,11 @@ def charge(agent_id):
     tx = Transaction(agent_id=agent.id, type="charge", amount=amount,
                      description=data.get("description", "Charge"))
     db.session.add(tx)
+    db.session.flush()
+    write_audit("charge", agent_id=agent.id, ip=request.remote_addr,
+                user_agent=request.headers.get("User-Agent", "")[:200],
+                actor=agent.api_key[:10] + "...",
+                amount=amount, tx_id=tx.id, description=tx.description)
     db.session.commit()
     fire_webhook(agent, "charge", tx)
     return success({"agent": agent.to_dict(), "transaction": tx.to_dict()})
@@ -284,6 +298,27 @@ def redoc_ui():
 </body>
 </html>"""
     return app.response_class(response=html, status=200, mimetype="text/html")
+
+
+# ===== Audit Log =====
+
+@app.route("/admin/audit")
+@limit(key_ip, "transactions")
+def list_audit():
+    """List recent audit log entries. Admin-only in production."""
+    try:
+        limit_n = min(int(request.args.get("limit", 50)), 500)
+    except ValueError:
+        return error("Invalid limit")
+    action = request.args.get("action")
+    agent_id = request.args.get("agent_id")
+    q = AuditLog.query
+    if action:
+        q = q.filter_by(action=action)
+    if agent_id:
+        q = q.filter_by(agent_id=agent_id)
+    entries = q.order_by(AuditLog.id.desc()).limit(limit_n).all()
+    return success({"entries": [e.to_dict() for e in entries], "count": len(entries)})
 
 
 # ===== Refunds =====
