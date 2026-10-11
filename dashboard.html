@@ -1,0 +1,295 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AgentPay Dashboard</title>
+<script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-950 text-white min-h-screen">
+
+<nav class="border-b border-gray-800 px-6 py-4">
+  <div class="max-w-4xl mx-auto flex items-center justify-between">
+    <div class="text-xl font-bold">⚡ AgentPay Dashboard</div>
+    <div class="flex gap-4 text-sm">
+      <a href="/" class="text-gray-400 hover:text-white">Home</a>
+      <a href="https://github.com/7399795590/agentpay" class="text-gray-400 hover:text-white">GitHub →</a>
+    </div>
+  </div>
+</nav>
+
+<div class="max-w-4xl mx-auto px-6 py-10">
+
+  <!-- API URL Config -->
+  <div class="bg-gray-900 border border-gray-800 rounded-lg p-4 mb-6">
+    <label class="text-xs text-gray-400 uppercase block mb-2">API Base URL</label>
+    <input type="text" id="api-url" value="http://127.0.0.1:5000" 
+           class="w-full bg-gray-800 border border-gray-700 rounded px-3 py-2 text-sm">
+    <p class="text-xs text-gray-500 mt-2">Default: local API. Change to Railway URL after deploying.</p>
+  </div>
+
+  <!-- Section 1: Create Agent -->
+  <div class="bg-gray-900 border border-gray-800 rounded-lg p-6 mb-6">
+    <h2 class="text-xl font-bold mb-4">Create New Agent</h2>
+    <div class="flex gap-3 flex-col md:flex-row">
+      <input type="text" id="create-name" placeholder="Agent name (e.g. my-bot)"
+             class="flex-1 bg-gray-800 border border-gray-700 rounded px-4 py-2">
+      <input type="text" id="create-webhook" placeholder="Webhook URL (optional)"
+             class="flex-1 bg-gray-800 border border-gray-700 rounded px-4 py-2">
+      <button id="btn-create" class="bg-blue-600 hover:bg-blue-700 px-6 py-2 rounded font-semibold">
+        Create Agent
+      </button>
+    </div>
+    <div id="create-result" class="mt-4"></div>
+  </div>
+
+  <!-- Section 2: Load Agent -->
+  <div class="bg-gray-900 border border-gray-800 rounded-lg p-6 mb-6">
+    <h2 class="text-xl font-bold mb-4">Load Existing Agent</h2>
+    <div class="flex gap-3">
+      <input type="text" id="load-key" placeholder="API Key (ap_...)"
+             class="flex-1 bg-gray-800 border border-gray-700 rounded px-4 py-2 font-mono text-sm">
+      <button id="btn-load" class="bg-green-600 hover:bg-green-700 px-6 py-2 rounded font-semibold">
+        Load
+      </button>
+    </div>
+    <div id="load-result" class="mt-4"></div>
+  </div>
+
+  <!-- Section 3: Agent Details (hidden until loaded) -->
+  <div id="agent-panel" class="hidden">
+    
+    <!-- Balance -->
+    <div class="bg-gray-900 border border-gray-800 rounded-lg p-6 mb-6">
+      <div class="flex items-center justify-between mb-4">
+        <h2 class="text-xl font-bold">Agent Details</h2>
+        <button id="btn-refresh" class="bg-gray-700 hover:bg-gray-600 px-4 py-1 rounded text-sm">
+          Refresh
+        </button>
+      </div>
+      <div class="grid md:grid-cols-2 gap-4">
+        <div>
+          <label class="text-xs text-gray-400 uppercase block mb-1">Name</label>
+          <div id="agent-name" class="font-mono">-</div>
+        </div>
+        <div>
+          <label class="text-xs text-gray-400 uppercase block mb-1">Agent ID</label>
+          <div id="agent-id" class="font-mono text-xs">-</div>
+        </div>
+        <div>
+          <label class="text-xs text-gray-400 uppercase block mb-1">Balance</label>
+          <div id="agent-balance" class="text-3xl font-bold text-green-400">$0.00</div>
+        </div>
+        <div>
+          <label class="text-xs text-gray-400 uppercase block mb-1">Webhook</label>
+          <div id="agent-webhook" class="font-mono text-xs break-all">-</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Topup / Charge -->
+    <div class="grid md:grid-cols-2 gap-6 mb-6">
+      <div class="bg-gray-900 border border-gray-800 rounded-lg p-6">
+        <h3 class="font-bold mb-3">Top Up</h3>
+        <div class="flex gap-2">
+          <input type="number" id="topup-amount" placeholder="Amount ($)"
+                 class="flex-1 bg-gray-800 border border-gray-700 rounded px-3 py-2">
+          <button id="btn-topup" class="bg-green-600 hover:bg-green-700 px-4 py-2 rounded font-semibold">
+            Top Up
+          </button>
+        </div>
+        <div id="topup-result" class="mt-3 text-sm"></div>
+      </div>
+
+      <div class="bg-gray-900 border border-gray-800 rounded-lg p-6">
+        <h3 class="font-bold mb-3">Charge</h3>
+        <div class="flex gap-2">
+          <input type="number" id="charge-amount" placeholder="Amount ($)" step="0.01"
+                 class="flex-1 bg-gray-800 border border-gray-700 rounded px-3 py-2">
+          <button id="btn-charge" class="bg-red-600 hover:bg-red-700 px-4 py-2 rounded font-semibold">
+            Charge
+          </button>
+        </div>
+        <div id="charge-result" class="mt-3 text-sm"></div>
+      </div>
+    </div>
+
+    <!-- Transactions -->
+    <div class="bg-gray-900 border border-gray-800 rounded-lg p-6">
+      <h3 class="font-bold mb-4">Transactions</h3>
+      <div id="tx-list" class="text-sm text-gray-400">Loading...</div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+const STORAGE_KEY = 'agentpay_dashboard_key';
+let currentKey = null;
+
+function getApiUrl() {
+  return document.getElementById('api-url').value.trim().replace(/\/$/, '');
+}
+
+function fmtCents(c) {
+  return '$' + (c / 100).toFixed(2);
+}
+
+function setResult(id, ok, msg) {
+  const el = document.getElementById(id);
+  el.className = ok ? 'mt-3 text-green-400 text-sm' : 'mt-3 text-red-400 text-sm';
+  el.textContent = msg;
+}
+
+async function createAgent() {
+  const name = document.getElementById('create-name').value.trim();
+  const webhook = document.getElementById('create-webhook').value.trim();
+  if (!name) { setResult('create-result', false, 'Enter a name'); return; }
+  try {
+    const body = { name };
+    if (webhook) body.webhook_url = webhook;
+    const r = await fetch(getApiUrl() + '/agents/create', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    const d = await r.json();
+    if (!d.ok) { setResult('create-result', false, d.error || 'Failed'); return; }
+    document.getElementById('create-result').className = 'mt-4';
+    document.getElementById('create-result').innerHTML = 
+      '<div class="bg-gray-800 rounded p-4 text-sm">' +
+      '<p class="text-green-400 mb-2">✅ Agent created!</p>' +
+      '<p class="mb-1"><b>Agent ID:</b> <code class="text-blue-400">' + d.agent.id + '</code></p>' +
+      '<p class="mb-3"><b>API Key:</b> <code class="text-yellow-400 break-all">' + d.api_key + '</code></p>' +
+      '<p class="text-xs text-gray-500">Save the API key — you will need it to load this agent.</p>' +
+      '</div>';
+    // Save key + id
+    currentKey = d.api_key;
+    localStorage.setItem(STORAGE_KEY, currentKey);
+    localStorage.setItem('agentpay_agent_id', d.agent.id);
+    renderAgent(d.agent);
+    await refreshTransactions(d.agent.id);
+  } catch (e) {
+    setResult('create-result', false, e.message);
+  }
+}
+
+async function loadAgent() {
+  let key = currentKey || document.getElementById('load-key').value.trim();
+  if (!key) { setResult('load-result', false, 'Enter API key'); return; }
+  currentKey = key;
+  localStorage.setItem(STORAGE_KEY, key);
+  // Extract agent_id by trying to fetch agent... we need the ID.
+  // API key does not include agent_id. We'll use /agents/{id} but need ID.
+  // Simplest: ask user to provide it, OR store agent_id alongside key.
+  // For MVP: we'll store both.
+  const storedId = localStorage.getItem('agentpay_agent_id');
+  if (!storedId) {
+    setResult('load-result', false, 'Agent ID not found. Please reload after creating.');
+    return;
+  }
+  try {
+    const r = await fetch(getApiUrl() + '/agents/' + storedId, {
+      headers: { 'Authorization': 'Bearer ' + key },
+    });
+    const d = await r.json();
+    if (!d.ok) { setResult('load-result', false, d.error || 'Failed'); return; }
+    renderAgent(d.agent);
+    await refreshTransactions(storedId);
+  } catch (e) {
+    setResult('load-result', false, e.message);
+  }
+}
+
+function renderAgent(agent) {
+  document.getElementById('agent-panel').classList.remove('hidden');
+  document.getElementById('agent-name').textContent = agent.name;
+  document.getElementById('agent-id').textContent = agent.id;
+  document.getElementById('agent-balance').textContent = agent.balance_display;
+  document.getElementById('agent-webhook').textContent = agent.webhook_url || '(none)';
+  localStorage.setItem('agentpay_agent_id', agent.id);
+}
+
+async function topup() {
+  const amount = parseFloat(document.getElementById('topup-amount').value);
+  if (!amount || amount <= 0) { setResult('topup-result', false, 'Enter amount'); return; }
+  const cents = Math.round(amount * 100);
+  const id = localStorage.getItem('agentpay_agent_id');
+  try {
+    const r = await fetch(getApiUrl() + '/agents/' + id + '/topup', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + currentKey },
+      body: JSON.stringify({ amount: cents }),
+    });
+    const d = await r.json();
+    if (!d.ok) { setResult('topup-result', false, d.error || 'Failed'); return; }
+    setResult('topup-result', true, '✅ Added ' + fmtCents(cents));
+    renderAgent(d.agent);
+    await refreshTransactions(id);
+  } catch (e) { setResult('topup-result', false, e.message); }
+}
+
+async function charge() {
+  const amount = parseFloat(document.getElementById('charge-amount').value);
+  if (!amount || amount <= 0) { setResult('charge-result', false, 'Enter amount'); return; }
+  const cents = Math.round(amount * 100);
+  const id = localStorage.getItem('agentpay_agent_id');
+  try {
+    const r = await fetch(getApiUrl() + '/agents/' + id + '/charge', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + currentKey },
+      body: JSON.stringify({ amount: cents }),
+    });
+    const d = await r.json();
+    if (!d.ok) { setResult('charge-result', false, d.error || 'Failed'); return; }
+    setResult('charge-result', true, '✅ Charged ' + fmtCents(cents));
+    renderAgent(d.agent);
+    await refreshTransactions(id);
+  } catch (e) { setResult('charge-result', false, e.message); }
+}
+
+async function refreshTransactions(id) {
+  const el = document.getElementById('tx-list');
+  el.textContent = 'Loading...';
+  try {
+    const r = await fetch(getApiUrl() + '/agents/' + id + '/transactions?limit=20', {
+      headers: { 'Authorization': 'Bearer ' + currentKey },
+    });
+    const d = await r.json();
+    if (!d.ok) { el.textContent = d.error || 'Failed'; return; }
+    if (d.count === 0) { el.innerHTML = '<p class="text-gray-500">No transactions yet.</p>'; return; }
+    el.innerHTML = d.transactions.map(tx => {
+      const sign = tx.type === 'topup' ? '+' : '−';
+      const color = tx.type === 'topup' ? 'text-green-400' : 'text-red-400';
+      return '<div class="flex justify-between items-center py-2 border-b border-gray-800 last:border-0">' +
+        '<div>' +
+          '<div class="font-semibold">' + tx.type + '</div>' +
+          '<div class="text-xs text-gray-500">' + (tx.description || '') + ' · #' + tx.id + '</div>' +
+        '</div>' +
+        '<div class="' + color + ' font-mono">' + sign + tx.amount_display + '</div>' +
+      '</div>';
+    }).join('');
+  } catch (e) { el.textContent = e.message; }
+}
+
+// Init
+const savedKey = localStorage.getItem(STORAGE_KEY);
+if (savedKey) currentKey = savedKey;
+
+document.getElementById('btn-create').addEventListener('click', createAgent);
+document.getElementById('btn-load').addEventListener('click', loadAgent);
+document.getElementById('btn-topup').addEventListener('click', topup);
+document.getElementById('btn-charge').addEventListener('click', charge);
+document.getElementById('btn-refresh').addEventListener('click', () => {
+  const id = localStorage.getItem('agentpay_agent_id');
+  if (id) { loadAgent(); refreshTransactions(id); }
+});
+
+// Auto-load if we have a saved key + id
+if (savedKey && localStorage.getItem('agentpay_agent_id')) {
+  loadAgent();
+}
+</script>
+
+</body>
+</html>
