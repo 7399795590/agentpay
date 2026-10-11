@@ -1,5 +1,8 @@
 # AgentPay
 
+> 🌐 **Live:** [agentpay-pearl.vercel.app](https://agentpay-pearl.vercel.app)
+> 💰 **Join waitlist:** [agentpay-pearl.vercel.app#waitlist](https://agentpay-pearl.vercel.app#waitlist)
+
 > Payment infrastructure for AI agents. Microtransactions without credit cards.
 
 ## The Problem
