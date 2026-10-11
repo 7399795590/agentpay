@@ -1,0 +1,349 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "AgentPay API",
+    "version": "0.1.0",
+    "description": "Payment infrastructure for AI agents. Microtransactions without credit cards.",
+    "contact": {
+      "url": "https://github.com/7399795590/agentpay"
+    }
+  },
+  "servers": [
+    {
+      "url": "http://127.0.0.1:5000",
+      "description": "Local dev"
+    }
+  ],
+  "tags": [
+    {
+      "name": "health",
+      "description": "Health check"
+    },
+    {
+      "name": "agents",
+      "description": "Agent management"
+    },
+    {
+      "name": "transactions",
+      "description": "Top-up and charge"
+    },
+    {
+      "name": "stripe",
+      "description": "Stripe payment integration"
+    }
+  ],
+  "paths": {
+    "/health": {
+      "get": {
+        "tags": [
+          "health"
+        ],
+        "summary": "Service health check",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/agents/create": {
+      "post": {
+        "tags": [
+          "agents"
+        ],
+        "summary": "Create a new agent",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "name"
+                ],
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "example": "my-bot"
+                  },
+                  "webhook_url": {
+                    "type": "string",
+                    "example": "https://webhook.site/..."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Agent created"
+          },
+          "400": {
+            "description": "Invalid input"
+          },
+          "429": {
+            "description": "Rate limit (5/min per IP)"
+          }
+        }
+      }
+    },
+    "/agents/{agent_id}": {
+      "get": {
+        "tags": [
+          "agents"
+        ],
+        "summary": "Get agent details",
+        "parameters": [
+          {
+            "name": "agent_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Agent found"
+          },
+          "404": {
+            "description": "Not found"
+          }
+        }
+      }
+    },
+    "/agents/{agent_id}/topup": {
+      "post": {
+        "tags": [
+          "transactions"
+        ],
+        "summary": "Add balance to agent",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "agent_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "amount"
+                ],
+                "properties": {
+                  "amount": {
+                    "type": "integer",
+                    "example": 500,
+                    "description": "USD cents"
+                  },
+                  "description": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Top-up successful"
+          },
+          "401": {
+            "description": "Missing API key"
+          },
+          "403": {
+            "description": "Key mismatch"
+          },
+          "429": {
+            "description": "Rate limit (30/min per agent)"
+          }
+        }
+      }
+    },
+    "/agents/{agent_id}/charge": {
+      "post": {
+        "tags": [
+          "transactions"
+        ],
+        "summary": "Deduct from agent balance",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "agent_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "amount"
+                ],
+                "properties": {
+                  "amount": {
+                    "type": "integer",
+                    "example": 30,
+                    "description": "USD cents"
+                  },
+                  "description": {
+                    "type": "string",
+                    "example": "API call fee"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Charge successful"
+          },
+          "402": {
+            "description": "Insufficient balance"
+          },
+          "429": {
+            "description": "Rate limit (60/min per agent)"
+          }
+        }
+      }
+    },
+    "/agents/{agent_id}/transactions": {
+      "get": {
+        "tags": [
+          "transactions"
+        ],
+        "summary": "List recent transactions",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "agent_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "default": 20,
+              "max": 100
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Transaction list"
+          }
+        }
+      }
+    },
+    "/agents/{agent_id}/stripe/checkout": {
+      "post": {
+        "tags": [
+          "stripe"
+        ],
+        "summary": "Create Stripe Checkout session for top-up",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "agent_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "amount_cents"
+                ],
+                "properties": {
+                  "amount_cents": {
+                    "type": "integer",
+                    "example": 1000,
+                    "description": "Minimum 100 (=$1)"
+                  },
+                  "success_url": {
+                    "type": "string"
+                  },
+                  "cancel_url": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Checkout URL created"
+          }
+        }
+      }
+    },
+    "/stripe/config": {
+      "get": {
+        "tags": [
+          "stripe"
+        ],
+        "summary": "Get Stripe publishable key (for frontend)",
+        "responses": {
+          "200": {
+            "description": "Stripe config"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "BearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "Use: Bearer ap_xxx... (your agent API key)"
+      }
+    }
+  }
+}

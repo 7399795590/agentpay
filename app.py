@@ -219,6 +219,69 @@ def list_transactions(agent_id):
     return success({"agent_id": agent.id, "transactions": [t.to_dict() for t in txs], "count": len(txs)})
 
 
+# ===== API Documentation =====
+
+@app.route("/openapi.json")
+def openapi_spec():
+    """Serve OpenAPI 3.0 spec."""
+    from pathlib import Path
+    spec_path = Path(__file__).parent / "openapi.json"
+    if not spec_path.exists():
+        return error("OpenAPI spec not found", 404)
+    return app.response_class(
+        response=spec_path.read_text(encoding="utf-8"),
+        status=200,
+        mimetype="application/json",
+    )
+
+
+@app.route("/docs")
+def swagger_ui():
+    """Swagger UI — interactive API docs."""
+    html = """<!DOCTYPE html>
+<html>
+<head>
+  <title>AgentPay API — Docs</title>
+  <meta charset="UTF-8">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/swagger-ui-dist@5/swagger-ui.css">
+</head>
+<body>
+<div id="swagger-ui"></div>
+<script src="https://cdn.jsdelivr.net/npm/swagger-ui-dist@5/swagger-ui-bundle.js"></script>
+<script>
+window.onload = () => {
+  window.ui = SwaggerUIBundle({
+    url: "/openapi.json",
+    dom_id: "#swagger-ui",
+    deepLinking: true,
+    presets: [SwaggerUIBundle.presets.apis, SwaggerUIBundle.SwaggerUIStandalonePreset],
+    layout: "BaseLayout",
+  });
+};
+</script>
+</body>
+</html>"""
+    return app.response_class(response=html, status=200, mimetype="text/html")
+
+
+@app.route("/redoc")
+def redoc_ui():
+    """ReDoc — alternative API docs."""
+    html = """<!DOCTYPE html>
+<html>
+<head>
+  <title>AgentPay API — ReDoc</title>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+</head>
+<body>
+  <redoc spec-url="/openapi.json"></redoc>
+  <script src="https://cdn.jsdelivr.net/npm/redoc@next/bundles/redoc.standalone.js"></script>
+</body>
+</html>"""
+    return app.response_class(response=html, status=200, mimetype="text/html")
+
+
 # ===== Stripe Endpoints =====
 
 @app.route("/agents/<agent_id>/stripe/checkout", methods=["POST"])
