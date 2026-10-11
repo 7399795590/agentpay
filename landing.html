@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AgentPay — Payment Infrastructure for AI Agents</title>
+<script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-950 text-white">
+
+<!-- Nav -->
+<nav class="border-b border-gray-800 px-6 py-4">
+  <div class="max-w-6xl mx-auto flex items-center justify-between">
+    <div class="text-xl font-bold">⚡ AgentPay</div>
+    <a href="https://github.com/7399795590/agentpay" class="text-gray-400 hover:text-white">GitHub →</a>
+  </div>
+</nav>
+
+<!-- Hero -->
+<section class="px-6 py-20">
+  <div class="max-w-4xl mx-auto text-center">
+    <div class="inline-block bg-blue-900/40 text-blue-300 px-4 py-1 rounded-full text-sm mb-6">
+      Coming Soon · Join Waitlist
+    </div>
+    <h1 class="text-5xl md:text-6xl font-bold mb-6">
+      Payment infrastructure<br>
+      <span class="text-blue-400">for AI agents</span>
+    </h1>
+    <p class="text-xl text-gray-400 mb-8 max-w-2xl mx-auto">
+      AI agents can't use credit cards. Traditional gateways (Stripe, PayPal)
+      weren't built for autonomous software. AgentPay is.
+    </p>
+    <a href="#waitlist" class="inline-block bg-blue-600 hover:bg-blue-700 px-8 py-3 rounded-lg font-semibold">
+      Join Waitlist
+    </a>
+  </div>
+</section>
+
+<!-- Problem -->
+<section class="px-6 py-16 bg-gray-900/50">
+  <div class="max-w-4xl mx-auto">
+    <h2 class="text-3xl font-bold mb-8 text-center">The Problem</h2>
+    <div class="grid md:grid-cols-3 gap-6">
+      <div class="bg-gray-800/50 p-6 rounded-lg">
+        <div class="text-3xl mb-3">🤖</div>
+        <h3 class="font-bold mb-2">Agents are autonomous</h3>
+        <p class="text-gray-400 text-sm">Claude Code, Cursor, AutoGPT — they work without human supervision.</p>
+      </div>
+      <div class="bg-gray-800/50 p-6 rounded-lg">
+        <div class="text-3xl mb-3">💳</div>
+        <h3 class="font-bold mb-2">But cards need humans</h3>
+        <p class="text-gray-400 text-sm">Every transaction requires approval. That kills automation.</p>
+      </div>
+      <div class="bg-gray-800/50 p-6 rounded-lg">
+        <div class="text-3xl mb-3">⚡</div>
+        <h3 class="font-bold mb-2">Microtransactions</h3>
+        <p class="text-gray-400 text-sm">176M+ agent transactions worth $73M in the past year. Most under $0.30.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Solution -->
+<section class="px-6 py-16">
+  <div class="max-w-4xl mx-auto">
+    <h2 class="text-3xl font-bold mb-8 text-center">The Solution</h2>
+    <div class="bg-gray-900 rounded-lg p-8 border border-gray-800">
+      <p class="text-gray-300 mb-6">A simple API that lets agents:</p>
+      <ul class="space-y-3 text-gray-300">
+        <li>✅ Hold a prepaid balance (in USD cents)</li>
+        <li>✅ Pay for services autonomously</li>
+        <li>✅ Log every transaction</li>
+        <li>✅ Integrate in 5 lines of code</li>
+      </ul>
+      <pre class="bg-black/50 p-4 rounded mt-6 text-sm text-green-400 overflow-x-auto">
+curl -X POST https://api.agentpay.dev/agents/abc123/charge \
+  -d '{"amount": 30, "description": "API call"}'</pre>
+    </div>
+  </div>
+</section>
+
+<!-- Waitlist -->
+<section id="waitlist" class="px-6 py-16 bg-gray-900/50">
+  <div class="max-w-2xl mx-auto text-center">
+    <h2 class="text-3xl font-bold mb-4">Join the Waitlist</h2>
+    <p class="text-gray-400 mb-8">Be the first to try AgentPay when we launch.</p>
+    <form action="https://formspree.io/f/xqpelpba" method="POST" class="flex flex-col md:flex-row gap-3">
+      <input type="email" name="email" required placeholder="you@company.com"
+             class="flex-1 px-4 py-3 bg-gray-800 border border-gray-700 rounded-lg focus:border-blue-500 focus:outline-none">
+      <button type="submit" class="bg-blue-600 hover:bg-blue-700 px-8 py-3 rounded-lg font-semibold">
+        Notify Me
+      </button>
+    </form>
+    <p class="text-gray-500 text-sm mt-4">No spam. We'll email you once when it's ready.</p>
+  </div>
+</section>
+
+<!-- Footer -->
+<footer class="px-6 py-8 border-t border-gray-800 text-center text-gray-500 text-sm">
+  <p>AgentPay · Open source · <a href="https://github.com/7399795590/agentpay" class="text-blue-400 hover:underline">GitHub</a></p>
+</footer>
+
+</body>
+</html>
