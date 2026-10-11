@@ -8,6 +8,7 @@ from models import Agent, Transaction
 from webhooks import fire_webhook
 from ratelimit import limit, limiter
 from logging_utils import setup_logging, generate_request_id
+import stripe_integration
 
 app = Flask(__name__)
 CORS(app)
@@ -216,6 +217,69 @@ def list_transactions(agent_id):
     limit = min(int(request.args.get("limit", 20)), 100)
     txs = Transaction.query.filter_by(agent_id=agent.id).order_by(Transaction.id.desc()).limit(limit).all()
     return success({"agent_id": agent.id, "transactions": [t.to_dict() for t in txs], "count": len(txs)})
+
+
+# ===== Stripe Endpoints =====
+
+@app.route("/agents/<agent_id>/stripe/checkout", methods=["POST"])
+@limit(key_agent, "topup")
+@require_api_key
+def stripe_checkout(agent_id):
+    """Create a Stripe Checkout session to top up the agent."""
+    if not stripe_integration.is_configured():
+        return error("Stripe not configured on server", 503)
+    agent = find_agent(agent_id)
+    if not agent:
+        return error("Agent not found", 404)
+    data = request.get_json(silent=True) or {}
+    amount_cents = data.get("amount_cents")
+    if not isinstance(amount_cents, int):
+        return error("amount_cents must be an integer (USD cents, min 100)")
+    success_url = data.get("success_url") or "https://agentpay-pearl.vercel.app/?stripe=success"
+    cancel_url = data.get("cancel_url") or "https://agentpay-pearl.vercel.app/?stripe=cancel"
+    try:
+        session = stripe_integration.create_checkout_session(
+            agent, amount_cents, success_url, cancel_url
+        )
+    except (ValueError, RuntimeError) as e:
+        return error(str(e), 400)
+    except Exception as e:
+        app.logger.error(f"Stripe error: {e}", exc_info=True)
+        return error("Stripe error", 500)
+    return success({"checkout": session})
+
+
+@app.route("/stripe/webhook", methods=["POST"])
+def stripe_webhook():
+    """Handle Stripe webhook events."""
+    if not stripe_integration.is_configured():
+        return error("Stripe not configured", 503)
+    payload = request.get_data()
+    sig = request.headers.get("Stripe-Signature", "")
+    try:
+        event = stripe_integration.verify_webhook(payload, sig)
+    except Exception as e:
+        app.logger.warning(f"Stripe webhook signature failed: {e}")
+        return error("Invalid signature", 400)
+    if event["type"] == "checkout.session.completed":
+        session = event["data"]["object"]
+        ok, msg, tx = stripe_integration.credit_agent_from_checkout(session)
+        if ok:
+            app.logger.info(f"Stripe webhook OK: {msg}")
+        else:
+            app.logger.warning(f"Stripe webhook failed: {msg}")
+    return success({"received": True})
+
+
+@app.route("/stripe/config")
+def stripe_config():
+    """Return Stripe publishable key (for frontend) or 'not configured'."""
+    import os
+    pk = os.environ.get("STRIPE_PUBLISHABLE_KEY", "")
+    return success({
+        "configured": stripe_integration.is_configured(),
+        "publishable_key": pk if pk else None,
+    })
 
 
 if __name__ == "__main__":
