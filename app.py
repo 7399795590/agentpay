@@ -25,6 +25,27 @@ def find_agent(agent_id):
     return db.session.get(Agent, agent_id)
 
 
+def require_api_key(view_func):
+    """Decorator: verifies Bearer token matches the agent in the URL."""
+    from functools import wraps
+    @wraps(view_func)
+    def wrapper(*args, **kwargs):
+        auth = request.headers.get("Authorization", "")
+        if not auth.startswith("Bearer "):
+            return error("Missing or invalid Authorization header (use: Bearer ap_...)", 401)
+        token = auth[7:].strip()
+        if not token.startswith("ap_"):
+            return error("Invalid API key format", 401)
+        agent_id = kwargs.get("agent_id")
+        agent = find_agent(agent_id)
+        if not agent:
+            return error("Agent not found", 404)
+        if agent.api_key != token:
+            return error("API key does not match this agent", 403)
+        return view_func(*args, **kwargs)
+    return wrapper
+
+
 # ===== Routes =====
 
 @app.route("/health")
@@ -53,6 +74,7 @@ def get_agent(agent_id):
 
 
 @app.route("/agents/<agent_id>/topup", methods=["POST"])
+@require_api_key
 def topup(agent_id):
     agent = find_agent(agent_id)
     if not agent:
@@ -70,6 +92,7 @@ def topup(agent_id):
 
 
 @app.route("/agents/<agent_id>/charge", methods=["POST"])
+@require_api_key
 def charge(agent_id):
     agent = find_agent(agent_id)
     if not agent:
@@ -89,6 +112,7 @@ def charge(agent_id):
 
 
 @app.route("/agents/<agent_id>/transactions")
+@require_api_key
 def list_transactions(agent_id):
     agent = find_agent(agent_id)
     if not agent:
