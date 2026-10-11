@@ -286,6 +286,49 @@ def redoc_ui():
     return app.response_class(response=html, status=200, mimetype="text/html")
 
 
+# ===== Refunds =====
+
+@app.route("/agents/<agent_id>/refund", methods=["POST"])
+@limit(key_agent, "topup")
+@require_api_key
+def refund_transaction(agent_id):
+    """Refund a previous charge by creating a reverse transaction."""
+    agent = find_agent(agent_id)
+    if not agent:
+        return error("Agent not found", 404)
+    data = request.get_json(silent=True) or {}
+    tx_id = data.get("transaction_id")
+    if not isinstance(tx_id, int):
+        return error("transaction_id (integer) is required")
+    reason = (data.get("reason") or "").strip()[:200]
+
+    original = db.session.get(Transaction, tx_id)
+    if not original or original.agent_id != agent.id:
+        return error("Transaction not found for this agent", 404)
+    if original.type != "charge":
+        return error("Only 'charge' transactions can be refunded")
+    # Prevent double refunds (check by prefix "Refund:{id}")
+    prefix = f"Refund:{original.id}"
+    already = Transaction.query.filter(
+        Transaction.agent_id == agent.id,
+        Transaction.type == "refund",
+        Transaction.description.like(prefix + "%"),
+    ).first()
+    if already:
+        return error("Already refunded", 409)
+
+    agent.balance += original.amount
+    refund = Transaction(
+        agent_id=agent.id,
+        type="refund",
+        amount=original.amount,
+        description=f"Refund:{original.id}" + (f" ({reason})" if reason else ""),
+    )
+    db.session.add(refund)
+    db.session.commit()
+    return success({"agent": agent.to_dict(), "refund": refund.to_dict(), "original_tx_id": original.id})
+
+
 # ===== Subscriptions =====
 
 INTERVALS = {
