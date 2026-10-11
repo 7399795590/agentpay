@@ -69,3 +69,35 @@ class Transaction(db.Model):
             "status": self.status,
             "created_at": self.created_at,
         }
+
+class Subscription(db.Model):
+    """A recurring payment plan for an agent."""
+    __tablename__ = "subscriptions"
+
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    agent_id = db.Column(db.String(32), db.ForeignKey("agents.id"), nullable=False)
+    name = db.Column(db.String(100), nullable=False)
+    amount = db.Column(db.Integer, nullable=False)  # per charge, in smallest unit
+    interval_seconds = db.Column(db.Integer, nullable=False)  # e.g. 2592000 (30 days)
+    next_charge_at = db.Column(db.Integer, nullable=False)
+    status = db.Column(db.String(20), default="active")  # active, cancelled
+    created_at = db.Column(db.Integer, default=lambda: int(time.time()))
+    cancelled_at = db.Column(db.Integer, nullable=True)
+
+    def to_dict(self):
+        agent = db.session.get(Agent, self.agent_id)
+        cur = agent.currency if agent else "USD"
+        return {
+            "id": self.id,
+            "agent_id": self.agent_id,
+            "name": self.name,
+            "amount": self.amount,
+            "amount_display": format_balance(self.amount, cur),
+            "interval_seconds": self.interval_seconds,
+            "interval_days": self.interval_seconds // 86400,
+            "next_charge_at": self.next_charge_at,
+            "status": self.status,
+            "created_at": self.created_at,
+            "cancelled_at": self.cancelled_at,
+        }
+

@@ -4,7 +4,7 @@ from flask import Flask, request, jsonify
 from flask_cors import CORS
 
 from database import db, init_db
-from models import Agent, Transaction
+from models import Agent, Transaction, Subscription
 from webhooks import fire_webhook
 from ratelimit import limit, limiter
 from logging_utils import setup_logging, generate_request_id
@@ -284,6 +284,113 @@ def redoc_ui():
 </body>
 </html>"""
     return app.response_class(response=html, status=200, mimetype="text/html")
+
+
+# ===== Subscriptions =====
+
+INTERVALS = {
+    "daily": 86400,
+    "weekly": 604800,
+    "monthly": 2592000,
+    "yearly": 31536000,
+}
+
+
+@app.route("/agents/<agent_id>/subscriptions/create", methods=["POST"])
+@limit(key_agent, "topup")
+@require_api_key
+def create_subscription(agent_id):
+    """Create a recurring subscription for an agent."""
+    agent = find_agent(agent_id)
+    if not agent:
+        return error("Agent not found", 404)
+    data = request.get_json(silent=True) or {}
+    name = (data.get("name") or "").strip()
+    if not name or len(name) > 100:
+        return error("Invalid name (required, max 100 chars)")
+    amount = data.get("amount")
+    if not isinstance(amount, int) or amount <= 0 or amount > 1_000_000:
+        return error("Invalid amount (positive integer, max 1,000,000)")
+    interval_key = (data.get("interval") or "monthly").lower()
+    if interval_key not in INTERVALS:
+        return error(f"Invalid interval. Choose from: {list(INTERVALS.keys())}")
+    interval_seconds = INTERVALS[interval_key]
+    now = int(time.time())
+    sub = Subscription(
+        agent_id=agent.id,
+        name=name,
+        amount=amount,
+        interval_seconds=interval_seconds,
+        next_charge_at=now + interval_seconds,
+    )
+    db.session.add(sub)
+    db.session.commit()
+    return success({"subscription": sub.to_dict()}, 201)
+
+
+@app.route("/agents/<agent_id>/subscriptions")
+@limit(key_agent, "transactions")
+@require_api_key
+def list_subscriptions(agent_id):
+    """List agent's subscriptions."""
+    agent = find_agent(agent_id)
+    if not agent:
+        return error("Agent not found", 404)
+    subs = Subscription.query.filter_by(agent_id=agent.id).order_by(Subscription.id.desc()).all()
+    return success({"subscriptions": [x.to_dict() for x in subs], "count": len(subs)})
+
+
+@app.route("/agents/<agent_id>/subscriptions/<int:sub_id>/cancel", methods=["POST"])
+@limit(key_agent, "topup")
+@require_api_key
+def cancel_subscription(agent_id, sub_id):
+    """Cancel a subscription."""
+    agent = find_agent(agent_id)
+    if not agent:
+        return error("Agent not found", 404)
+    sub = db.session.get(Subscription, sub_id)
+    if not sub or sub.agent_id != agent.id:
+        return error("Subscription not found", 404)
+    if sub.status == "cancelled":
+        return success({"subscription": sub.to_dict(), "message": "Already cancelled"})
+    sub.status = "cancelled"
+    sub.cancelled_at = int(time.time())
+    db.session.commit()
+    return success({"subscription": sub.to_dict()})
+
+
+@app.route("/admin/run-billing", methods=["POST"])
+def run_billing():
+    """Run billing for all due subscriptions. Admin-only in production."""
+    now = int(time.time())
+    due = Subscription.query.filter(
+        Subscription.status == "active",
+        Subscription.next_charge_at <= now,
+    ).all()
+    processed = []
+    failed = []
+    for sub in due:
+        agent = db.session.get(Agent, sub.agent_id)
+        if not agent:
+            sub.status = "cancelled"
+            db.session.commit()
+            failed.append({"sub_id": sub.id, "reason": "agent_missing"})
+            continue
+        if agent.balance < sub.amount:
+            failed.append({"sub_id": sub.id, "reason": "insufficient_balance"})
+            continue
+        agent.balance -= sub.amount
+        tx = Transaction(
+            agent_id=agent.id,
+            type="charge",
+            amount=sub.amount,
+            description=f"Subscription: {sub.name} (#{sub.id})",
+        )
+        sub.next_charge_at = now + sub.interval_seconds
+        db.session.add(tx)
+        db.session.commit()
+        processed.append({"sub_id": sub.id, "amount": sub.amount, "tx_id": tx.id})
+    return success({"processed": processed, "failed": failed, "total": len(due)})
 
 
 # ===== Stripe Endpoints =====
