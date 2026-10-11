@@ -469,11 +469,12 @@ def refund_transaction(agent_id):
         description=f"Refund:{original.id}" + (f" ({reason})" if reason else ""),
     )
     db.session.add(refund)
-    db.session.commit()
+    db.session.flush()  # get refund.id without committing
     write_audit("refund", agent_id=agent.id, ip=request.remote_addr,
                 user_agent=request.headers.get("User-Agent", "")[:200],
                 metadata={"refund_tx_id": refund.id, "original_tx_id": original.id,
                           "amount": original.amount, "reason": reason})
+    db.session.commit()
     return success({"agent": agent.to_dict(), "refund": refund.to_dict(), "original_tx_id": original.id})
 
 
@@ -515,11 +516,12 @@ def create_subscription(agent_id):
         next_charge_at=now + interval_seconds,
     )
     db.session.add(sub)
-    db.session.commit()
+    db.session.flush()  # get sub.id without committing
     write_audit("subscription.create", agent_id=agent.id, ip=request.remote_addr,
                 user_agent=request.headers.get("User-Agent", "")[:200],
                 metadata={"sub_id": sub.id, "name": name, "amount": amount,
                           "interval_seconds": interval_seconds})
+    db.session.commit()
     return success({"subscription": sub.to_dict()}, 201)
 
 
@@ -550,10 +552,10 @@ def cancel_subscription(agent_id, sub_id):
         return success({"subscription": sub.to_dict(), "message": "Already cancelled"})
     sub.status = "cancelled"
     sub.cancelled_at = int(time.time())
-    db.session.commit()
     write_audit("subscription.cancel", agent_id=agent.id, ip=request.remote_addr,
                 user_agent=request.headers.get("User-Agent", "")[:200],
                 metadata={"sub_id": sub.id, "name": sub.name, "amount": sub.amount})
+    db.session.commit()
     return success({"subscription": sub.to_dict()})
 
 
@@ -586,10 +588,11 @@ def run_billing():
         )
         sub.next_charge_at = now + sub.interval_seconds
         db.session.add(tx)
-        db.session.commit()
+        db.session.flush()  # get tx.id without committing
         write_audit("subscription.billing", agent_id=agent.id,
                     metadata={"sub_id": sub.id, "name": sub.name,
                               "amount": sub.amount, "tx_id": tx.id})
+        db.session.commit()
         processed.append({"sub_id": sub.id, "amount": sub.amount, "tx_id": tx.id})
     return success({"processed": processed, "failed": failed, "total": len(due)})
 
