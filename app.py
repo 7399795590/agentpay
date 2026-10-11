@@ -6,6 +6,7 @@ from flask_cors import CORS
 from database import db, init_db
 from models import Agent, Transaction
 from webhooks import fire_webhook
+from ratelimit import limit, limiter
 
 app = Flask(__name__)
 CORS(app)
@@ -47,6 +48,16 @@ def require_api_key(view_func):
     return wrapper
 
 
+def key_ip(request, **kwargs):
+    """Rate limit key: by client IP."""
+    return f"ip:{request.remote_addr}"
+
+
+def key_agent(request, **kwargs):
+    """Rate limit key: by agent_id."""
+    return f"agent:{kwargs.get('agent_id', 'unknown')}"
+
+
 # ===== Routes =====
 
 @app.route("/health")
@@ -55,6 +66,7 @@ def health():
 
 
 @app.route("/agents/create", methods=["POST"])
+@limit(key_ip, "create")
 def create_agent():
     data = request.get_json(silent=True) or {}
     name = (data.get("name") or "").strip()
@@ -70,6 +82,7 @@ def create_agent():
 
 
 @app.route("/agents/<agent_id>")
+@limit(key_ip, "get_agent")
 def get_agent(agent_id):
     agent = find_agent(agent_id)
     if not agent:
@@ -78,6 +91,7 @@ def get_agent(agent_id):
 
 
 @app.route("/agents/<agent_id>/topup", methods=["POST"])
+@limit(key_agent, "topup")
 @require_api_key
 def topup(agent_id):
     agent = find_agent(agent_id)
@@ -97,6 +111,7 @@ def topup(agent_id):
 
 
 @app.route("/agents/<agent_id>/charge", methods=["POST"])
+@limit(key_agent, "charge")
 @require_api_key
 def charge(agent_id):
     agent = find_agent(agent_id)
@@ -118,6 +133,7 @@ def charge(agent_id):
 
 
 @app.route("/agents/<agent_id>/transactions")
+@limit(key_agent, "transactions")
 @require_api_key
 def list_transactions(agent_id):
     agent = find_agent(agent_id)
