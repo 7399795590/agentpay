@@ -150,7 +150,11 @@ def create_agent():
     webhook_url = (data.get("webhook_url") or "").strip() or None
     if webhook_url and not webhook_url.startswith(("http://", "https://")):
         return error("webhook_url must start with http:// or https://")
-    agent = Agent(name=name, webhook_url=webhook_url)
+    currency = (data.get("currency") or "USD").upper()
+    from models import SUPPORTED_CURRENCIES
+    if currency not in SUPPORTED_CURRENCIES:
+        return error(f"Unsupported currency. Choose from: {SUPPORTED_CURRENCIES}")
+    agent = Agent(name=name, webhook_url=webhook_url, currency=currency)
     db.session.add(agent)
     db.session.commit()
     return success({"agent": agent.to_dict(), "api_key": agent.api_key}, 201)

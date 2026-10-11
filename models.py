@@ -4,6 +4,16 @@ import time
 from database import db
 
 
+CURRENCY_SYMBOLS = {"USD": "$", "EUR": "€", "GBP": "£"}
+SUPPORTED_CURRENCIES = list(CURRENCY_SYMBOLS.keys())
+
+
+def format_balance(amount_cents: int, currency: str = "USD") -> str:
+    """Format balance with currency symbol."""
+    symbol = CURRENCY_SYMBOLS.get(currency, currency + " ")
+    return f"{symbol}{amount_cents / 100:.2f}"
+
+
 def generate_api_key():
     """Generate a secure API key."""
     return "ap_" + secrets.token_hex(24)
@@ -16,7 +26,8 @@ class Agent(db.Model):
     id = db.Column(db.String(32), primary_key=True, default=lambda: secrets.token_hex(8))
     name = db.Column(db.String(100), nullable=False)
     api_key = db.Column(db.String(64), unique=True, nullable=False, default=generate_api_key)
-    balance = db.Column(db.Integer, default=0)  # in cents
+    balance = db.Column(db.Integer, default=0)  # in smallest unit
+    currency = db.Column(db.String(3), default="USD")  # USD, EUR, GBP
     webhook_url = db.Column(db.String(500), nullable=True)
     created_at = db.Column(db.Integer, default=lambda: int(time.time()))
 
@@ -27,7 +38,8 @@ class Agent(db.Model):
             "id": self.id,
             "name": self.name,
             "balance": self.balance,
-            "balance_display": f"${self.balance / 100:.2f}",
+            "currency": self.currency,
+            "balance_display": format_balance(self.balance, self.currency),
             "webhook_url": self.webhook_url,
             "created_at": self.created_at,
         }
@@ -46,12 +58,13 @@ class Transaction(db.Model):
     created_at = db.Column(db.Integer, default=lambda: int(time.time()))
 
     def to_dict(self):
+        cur = self.agent.currency if self.agent else "USD"
         return {
             "id": self.id,
             "agent_id": self.agent_id,
             "type": self.type,
             "amount": self.amount,
-            "amount_display": f"${abs(self.amount) / 100:.2f}",
+            "amount_display": format_balance(abs(self.amount), cur),
             "description": self.description,
             "status": self.status,
             "created_at": self.created_at,
