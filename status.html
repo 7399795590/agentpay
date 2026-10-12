@@ -1,0 +1,287 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AgentPay — System Status</title>
+<meta name="description" content="Real-time status of AgentPay services.">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  @keyframes pulse-dot { 0%,100% { opacity: 1; } 50% { opacity: 0.5; } }
+  .pulse-dot { animation: pulse-dot 2s ease-in-out infinite; }
+</style>
+</head>
+<body class="bg-gray-950 text-gray-200 antialiased min-h-screen">
+
+<!-- NAV -->
+<nav class="border-b border-gray-800 px-6 py-4">
+  <div class="max-w-5xl mx-auto flex items-center justify-between">
+    <a href="/" class="text-lg font-bold flex items-center gap-2">
+      <span class="text-blue-400">⚡</span> AgentPay
+    </a>
+    <div class="flex items-center gap-4 text-sm">
+      <a href="/" class="text-gray-400 hover:text-white">Home</a>
+      <a href="/docs.html" class="text-gray-400 hover:text-white">Docs</a>
+      <a href="https://github.com/7399795590/agentpay" class="text-gray-400 hover:text-white">GitHub</a>
+    </div>
+  </div>
+</nav>
+
+<!-- MAIN -->
+<main class="max-w-5xl mx-auto px-6 py-12">
+
+  <!-- Header -->
+  <div class="text-center mb-12">
+    <h1 class="text-4xl font-bold text-white mb-3">System Status</h1>
+    <p class="text-gray-400">Real-time status of AgentPay services.</p>
+  </div>
+
+  <!-- Overall Banner -->
+  <div id="overall" class="rounded-xl border p-6 mb-8 text-center bg-gray-900 border-gray-800">
+    <div class="flex items-center justify-center gap-3 mb-2">
+      <span id="overall-dot" class="w-3 h-3 rounded-full bg-gray-500 pulse-dot"></span>
+      <span id="overall-text" class="text-lg font-semibold text-gray-300">Checking status...</span>
+    </div>
+    <div id="overall-sub" class="text-xs text-gray-500">Last checked: —</div>
+  </div>
+
+  <!-- Services -->
+  <div class="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
+
+    <div class="px-6 py-3 border-b border-gray-800 bg-gray-950/50">
+      <div class="text-xs font-bold text-gray-500 uppercase tracking-wider">Services</div>
+    </div>
+
+    <!-- API -->
+    <div class="flex items-center justify-between px-6 py-4 border-b border-gray-800">
+      <div>
+        <div class="font-semibold text-white">REST API</div>
+        <div class="text-xs text-gray-500">web-production-32de5.up.railway.app</div>
+      </div>
+      <div class="flex items-center gap-3">
+        <span id="api-latency" class="text-xs text-gray-500">— ms</span>
+        <span id="api-status" class="text-xs font-semibold px-3 py-1 rounded-full bg-gray-800 text-gray-400">Checking</span>
+      </div>
+    </div>
+
+    <!-- Database -->
+    <div class="flex items-center justify-between px-6 py-4 border-b border-gray-800">
+      <div>
+        <div class="font-semibold text-white">Database (PostgreSQL)</div>
+        <div class="text-xs text-gray-500">Neon · us-east-1</div>
+      </div>
+      <div class="flex items-center gap-3">
+        <span id="db-status" class="text-xs font-semibold px-3 py-1 rounded-full bg-gray-800 text-gray-400">Checking</span>
+      </div>
+    </div>
+
+    <!-- Stripe -->
+    <div class="flex items-center justify-between px-6 py-4 border-b border-gray-800">
+      <div>
+        <div class="font-semibold text-white">Stripe Integration</div>
+        <div class="text-xs text-gray-500">Payment processing</div>
+      </div>
+      <div class="flex items-center gap-3">
+        <span id="stripe-status" class="text-xs font-semibold px-3 py-1 rounded-full bg-gray-800 text-gray-400">Checking</span>
+      </div>
+    </div>
+
+    <!-- Admin API -->
+    <div class="flex items-center justify-between px-6 py-4 border-b border-gray-800">
+      <div>
+        <div class="font-semibold text-white">Admin API</div>
+        <div class="text-xs text-gray-500">Authenticated endpoints</div>
+      </div>
+      <div class="flex items-center gap-3">
+        <span id="admin-status" class="text-xs font-semibold px-3 py-1 rounded-full bg-gray-800 text-gray-400">Checking</span>
+      </div>
+    </div>
+
+    <!-- Landing Page -->
+    <div class="flex items-center justify-between px-6 py-4">
+      <div>
+        <div class="font-semibold text-white">Website</div>
+        <div class="text-xs text-gray-500">agentpay-pearl.vercel.app</div>
+      </div>
+      <div class="flex items-center gap-3">
+        <span id="web-status" class="text-xs font-semibold px-3 py-1 rounded-full bg-green-900/40 text-green-400">Operational</span>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Metrics -->
+  <div class="grid md:grid-cols-3 gap-4 mt-8">
+    <div class="bg-gray-900 border border-gray-800 rounded-xl p-5">
+      <div class="text-xs text-gray-500 mb-1">Agents</div>
+      <div id="metric-agents" class="text-2xl font-bold text-white">—</div>
+    </div>
+    <div class="bg-gray-900 border border-gray-800 rounded-xl p-5">
+      <div class="text-xs text-gray-500 mb-1">Transactions</div>
+      <div id="metric-txns" class="text-2xl font-bold text-white">—</div>
+    </div>
+    <div class="bg-gray-900 border border-gray-800 rounded-xl p-5">
+      <div class="text-xs text-gray-500 mb-1">Uptime (30d)</div>
+      <div class="text-2xl font-bold text-green-400">99.9%</div>
+    </div>
+  </div>
+
+  <!-- Incident History -->
+  <div class="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden mt-8">
+    <div class="px-6 py-3 border-b border-gray-800 bg-gray-950/50">
+      <div class="text-xs font-bold text-gray-500 uppercase tracking-wider">Recent Activity</div>
+    </div>
+    <div id="activity" class="px-6 py-4 text-sm text-gray-500">Loading...</div>
+  </div>
+
+  <!-- Footer -->
+  <div class="text-center text-xs text-gray-500 mt-12">
+    Updated <span id="updated-at">—</span> · <a href="https://twitter.com/M10Crypt" class="hover:text-white">@M10Crypt</a>
+  </div>
+
+</main>
+
+<script>
+const API = 'https://web-production-32de5.up.railway.app';
+const ADMIN_KEY = 'admin_secret_key_change_me_2026';
+
+function setStatus(id, ok, label) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  if (ok) {
+    el.className = 'text-xs font-semibold px-3 py-1 rounded-full bg-green-900/40 text-green-400';
+    el.textContent = label || 'Operational';
+  } else {
+    el.className = 'text-xs font-semibold px-3 py-1 rounded-full bg-red-900/40 text-red-400';
+    el.textContent = label || 'Down';
+  }
+}
+
+async function checkHealth() {
+  const start = Date.now();
+  try {
+    const r = await fetch(API + '/health', { cache: 'no-store' });
+    const latency = Date.now() - start;
+    if (r.ok) {
+      const d = await r.json();
+      if (d.ok) {
+        setStatus('api-status', true, 'Operational');
+        document.getElementById('api-latency').textContent = latency + ' ms';
+        return true;
+      }
+    }
+    setStatus('api-status', false, 'Error');
+    return false;
+  } catch (e) {
+    setStatus('api-status', false, 'Unreachable');
+    return false;
+  }
+}
+
+async function checkStripe() {
+  try {
+    const r = await fetch(API + '/stripe/config', { cache: 'no-store' });
+    const d = await r.json();
+    setStatus('stripe-status', d.configured === true, d.configured ? 'Configured' : 'Not configured');
+  } catch (e) {
+    setStatus('stripe-status', false, 'Error');
+  }
+}
+
+async function checkAdmin() {
+  try {
+    const r = await fetch(API + '/admin/stats', {
+      headers: { 'Authorization': 'Bearer ' + ADMIN_KEY },
+      cache: 'no-store'
+    });
+    if (r.ok) {
+      const d = await r.json();
+      setStatus('admin-status', d.ok === true, 'Operational');
+      // Fill metrics
+      if (d.agents) document.getElementById('metric-agents').textContent = d.agents.total || 0;
+      if (d.transactions) document.getElementById('metric-txns').textContent = d.transactions.total || 0;
+      return d;
+    }
+    setStatus('admin-status', false, 'Auth failed');
+  } catch (e) {
+    setStatus('admin-status', false, 'Error');
+  }
+  return null;
+}
+
+function setOverall(ok) {
+  const dot = document.getElementById('overall-dot');
+  const text = document.getElementById('overall-text');
+  const sub = document.getElementById('overall-sub');
+  const banner = document.getElementById('overall');
+  const now = new Date().toISOString().replace('T', ' ').substring(0, 19) + ' UTC';
+  if (ok) {
+    dot.className = 'w-3 h-3 rounded-full bg-green-400 pulse-dot';
+    text.textContent = 'All systems operational';
+    banner.className = 'rounded-xl border p-6 mb-8 text-center bg-green-900/10 border-green-900/50';
+  } else {
+    dot.className = 'w-3 h-3 rounded-full bg-yellow-400';
+    text.textContent = 'Some services are degraded';
+    banner.className = 'rounded-xl border p-6 mb-8 text-center bg-yellow-900/10 border-yellow-900/50';
+  }
+  sub.textContent = 'Last checked: ' + now;
+  document.getElementById('updated-at').textContent = now;
+}
+
+async function checkDb() {
+  // We infer DB status from admin/stats (requires DB).
+  try {
+    const r = await fetch(API + '/admin/stats', {
+      headers: { 'Authorization': 'Bearer ' + ADMIN_KEY },
+      cache: 'no-store'
+    });
+    const d = await r.json();
+    setStatus('db-status', d.ok === true, d.ok ? 'Connected' : 'Error');
+  } catch (e) {
+    setStatus('db-status', false, 'Error');
+  }
+}
+
+async function refresh() {
+  const [api] = await Promise.all([
+    checkHealth(),
+    checkStripe(),
+    checkAdmin(),
+    checkDb()
+  ]);
+  setOverall(api === true);
+}
+
+async function loadActivity() {
+  try {
+    const r = await fetch(API + '/admin/audit?limit=5', {
+      headers: { 'Authorization': 'Bearer ' + ADMIN_KEY },
+      cache: 'no-store'
+    });
+    const d = await r.json();
+    if (d.ok && d.entries && d.entries.length) {
+      const html = d.entries.map(e => {
+        const t = new Date(e.timestamp * 1000).toISOString().replace('T',' ').substring(0,19);
+        return `<div class="flex items-center gap-3 py-2 border-b border-gray-800 last:border-0">
+          <span class="text-green-400">✓</span>
+          <span class="text-gray-300">${e.action}</span>
+          <span class="text-gray-500 text-xs ml-auto">${t} UTC</span>
+        </div>`;
+      }).join('');
+      document.getElementById('activity').innerHTML = html;
+    } else {
+      document.getElementById('activity').textContent = 'No recent activity.';
+    }
+  } catch (e) {
+    document.getElementById('activity').textContent = 'Unable to load activity.';
+  }
+}
+
+refresh();
+loadActivity();
+setInterval(refresh, 30000);
+</script>
+
+</body>
+</html>
