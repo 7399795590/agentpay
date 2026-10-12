@@ -3,102 +3,413 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>AgentPay — Payment Infrastructure for AI Agents</title>
+<title>AgentPay — Payments for AI Agents</title>
+<meta name="description" content="Payment infrastructure for AI agents. Simple API to create agents, top up balances, charge for services, handle refunds, and manage subscriptions.">
+<meta property="og:title" content="AgentPay — Payments for AI Agents">
+<meta property="og:description" content="Give your AI agents a wallet. Simple API. Works with Claude, GPT, LangChain.">
 <script src="https://cdn.tailwindcss.com"></script>
+<script>
+tailwind.config = {
+  theme: {
+    extend: {
+      colors: {
+        brand: {
+          50: '#eff6ff',
+          500: '#3b82f6',
+          600: '#2563eb',
+          700: '#1d4ed8',
+        }
+      }
+    }
+  }
+}
+</script>
+<style>
+  .code-scroll { overflow-x: auto; }
+  .code-scroll::-webkit-scrollbar { height: 6px; }
+  .code-scroll::-webkit-scrollbar-thumb { background: #374151; border-radius: 3px; }
+  details summary { cursor: pointer; }
+  details summary::-webkit-details-marker { display: none; }
+  details[open] .chevron { transform: rotate(180deg); }
+  .chevron { transition: transform 0.2s; }
+</style>
 </head>
-<body class="bg-gray-950 text-white">
+<body class="bg-gray-950 text-white antialiased">
 
-<!-- Nav -->
-<nav class="border-b border-gray-800 px-6 py-4">
+<!-- ═══ NAV ═══ -->
+<nav class="border-b border-gray-800 px-6 py-4 sticky top-0 bg-gray-950/90 backdrop-blur z-50">
   <div class="max-w-6xl mx-auto flex items-center justify-between">
-    <div class="text-xl font-bold">⚡ AgentPay</div>
-    <a href="https://github.com/7399795590/agentpay" class="text-gray-400 hover:text-white">GitHub →</a>
+    <a href="#" class="text-xl font-bold flex items-center gap-2">
+      <span class="text-blue-400">⚡</span> AgentPay
+    </a>
+    <div class="hidden md:flex items-center gap-6 text-sm text-gray-400">
+      <a href="#features" class="hover:text-white">Features</a>
+      <a href="#pricing" class="hover:text-white">Pricing</a>
+      <a href="#faq" class="hover:text-white">FAQ</a>
+      <a href="https://web-production-32de5.up.railway.app/docs" class="hover:text-white">API Docs</a>
+    </div>
+    <a href="#get-started" class="bg-blue-600 hover:bg-blue-700 px-4 py-2 rounded-lg text-sm font-semibold">
+      Get API Key
+    </a>
   </div>
 </nav>
 
-<!-- Hero -->
-<section class="px-6 py-20">
+<!-- ═══ HERO ═══ -->
+<section class="px-6 pt-20 pb-16">
   <div class="max-w-4xl mx-auto text-center">
-    <div class="inline-block bg-blue-900/40 text-blue-300 px-4 py-1 rounded-full text-sm mb-6">
-      Coming Soon · Join Waitlist
+    <div id="live-status" class="inline-flex items-center gap-2 bg-green-900/30 border border-green-800 text-green-400 px-4 py-1.5 rounded-full text-xs mb-6">
+      <span class="w-2 h-2 rounded-full bg-green-400 animate-pulse"></span>
+      <span>API is LIVE · Checking...</span>
     </div>
-    <h1 class="text-5xl md:text-6xl font-bold mb-6">
-      Payment infrastructure<br>
-      <span class="text-blue-400">for AI agents</span>
+
+    <h1 class="text-5xl md:text-6xl font-bold mb-6 leading-tight">
+      Payments for<br>
+      <span class="text-blue-400">AI Agents</span>
     </h1>
-    <p class="text-xl text-gray-400 mb-8 max-w-2xl mx-auto">
-      AI agents can't use credit cards. Traditional gateways (Stripe, PayPal)
-      weren't built for autonomous software. AgentPay is.
+
+    <p class="text-lg md:text-xl text-gray-400 mb-10 max-w-2xl mx-auto leading-relaxed">
+      Give your AI agents a wallet. A simple API to create agents, top up balances,
+      charge for services, handle refunds, and manage subscriptions.
+      Works with Claude, GPT, LangChain, and any autonomous agent.
     </p>
-    <a href="#waitlist" class="inline-block bg-blue-600 hover:bg-blue-700 px-8 py-3 rounded-lg font-semibold">
-      Join Waitlist
-    </a>
+
+    <div class="flex flex-col sm:flex-row gap-4 justify-center items-center mb-12">
+      <a href="#get-started" class="bg-blue-600 hover:bg-blue-700 px-8 py-3 rounded-lg font-semibold w-full sm:w-auto">
+        Get Free API Key →
+      </a>
+      <a href="https://web-production-32de5.up.railway.app/docs" class="border border-gray-700 hover:border-gray-500 px-8 py-3 rounded-lg font-semibold w-full sm:w-auto">
+        View API Docs
+      </a>
+    </div>
+
+    <!-- Code Preview -->
+    <div class="max-w-2xl mx-auto text-left">
+      <div class="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden">
+        <div class="flex items-center justify-between px-4 py-2 border-b border-gray-800 bg-gray-950/50">
+          <div class="flex gap-1.5">
+            <span class="w-3 h-3 rounded-full bg-red-500/60"></span>
+            <span class="w-3 h-3 rounded-full bg-yellow-500/60"></span>
+            <span class="w-3 h-3 rounded-full bg-green-500/60"></span>
+          </div>
+          <span class="text-xs text-gray-500">terminal</span>
+        </div>
+        <pre class="code-scroll p-4 text-sm text-gray-300 font-mono"><code><span class="text-gray-500">$</span> <span class="text-green-400">curl</span> -X POST https://web-production-32de5.up.railway.app/agents/create \
+  -H <span class="text-yellow-300">"Content-Type: application/json"</span> \
+  -d <span class="text-yellow-300">'{"name":"my-agent"}'</span>
+
+<span class="text-gray-500"># Response:</span>
+{
+  <span class="text-blue-400">"ok"</span>: true,
+  <span class="text-blue-400">"agent"</span>: { <span class="text-blue-400">"id"</span>: <span class="text-yellow-300">"a1b2c3..."</span>, <span class="text-blue-400">"balance"</span>: 0 },
+  <span class="text-blue-400">"api_key"</span>: <span class="text-yellow-300">"ap_xxxxxxxxxxxx"</span>
+}</code></pre>
+      </div>
+    </div>
   </div>
 </section>
 
-<!-- Problem -->
+<!-- ═══ PROBLEM ═══ -->
 <section class="px-6 py-16 bg-gray-900/50">
-  <div class="max-w-4xl mx-auto">
-    <h2 class="text-3xl font-bold mb-8 text-center">The Problem</h2>
+  <div class="max-w-5xl mx-auto">
+    <h2 class="text-3xl md:text-4xl font-bold mb-12 text-center">The problem we solve</h2>
     <div class="grid md:grid-cols-3 gap-6">
-      <div class="bg-gray-800/50 p-6 rounded-lg">
+      <div class="bg-gray-800/50 border border-gray-800 p-6 rounded-xl">
         <div class="text-3xl mb-3">🤖</div>
         <h3 class="font-bold mb-2">Agents are autonomous</h3>
-        <p class="text-gray-400 text-sm">Claude Code, Cursor, AutoGPT — they work without human supervision.</p>
+        <p class="text-gray-400 text-sm leading-relaxed">Claude Code, Cursor, AutoGPT — they work without human supervision. But they can't pay for things.</p>
       </div>
-      <div class="bg-gray-800/50 p-6 rounded-lg">
+      <div class="bg-gray-800/50 border border-gray-800 p-6 rounded-xl">
         <div class="text-3xl mb-3">💳</div>
-        <h3 class="font-bold mb-2">But cards need humans</h3>
-        <p class="text-gray-400 text-sm">Every transaction requires approval. That kills automation.</p>
+        <h3 class="font-bold mb-2">No credit cards</h3>
+        <p class="text-gray-400 text-sm leading-relaxed">Stripe and PayPal require human verification, KYC, and card details. Agents can't do that.</p>
       </div>
-      <div class="bg-gray-800/50 p-6 rounded-lg">
+      <div class="bg-gray-800/50 border border-gray-800 p-6 rounded-xl">
         <div class="text-3xl mb-3">⚡</div>
-        <h3 class="font-bold mb-2">Microtransactions</h3>
-        <p class="text-gray-400 text-sm">176M+ agent transactions worth $73M in the past year. Most under $0.30.</p>
+        <h3 class="font-bold mb-2">AgentPay fixes it</h3>
+        <p class="text-gray-400 text-sm leading-relaxed">A simple API that gives every agent an API key, a balance, and a way to pay for services.</p>
       </div>
     </div>
   </div>
 </section>
 
-<!-- Solution -->
-<section class="px-6 py-16">
-  <div class="max-w-4xl mx-auto">
-    <h2 class="text-3xl font-bold mb-8 text-center">The Solution</h2>
-    <div class="bg-gray-900 rounded-lg p-8 border border-gray-800">
-      <p class="text-gray-300 mb-6">A simple API that lets agents:</p>
-      <ul class="space-y-3 text-gray-300">
-        <li>✅ Hold a prepaid balance (in USD cents)</li>
-        <li>✅ Pay for services autonomously</li>
-        <li>✅ Log every transaction</li>
-        <li>✅ Integrate in 5 lines of code</li>
-      </ul>
-      <pre class="bg-black/50 p-4 rounded mt-6 text-sm text-green-400 overflow-x-auto">
-curl -X POST https://api.agentpay.dev/agents/abc123/charge \
-  -d '{"amount": 30, "description": "API call"}'</pre>
+<!-- ═══ FEATURES ═══ -->
+<section id="features" class="px-6 py-20">
+  <div class="max-w-6xl mx-auto">
+    <div class="text-center mb-16">
+      <h2 class="text-3xl md:text-4xl font-bold mb-4">Everything you need</h2>
+      <p class="text-gray-400 max-w-2xl mx-auto">Production-ready infrastructure. Built for developers, designed for scale.</p>
+    </div>
+
+    <div class="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
+      <div class="bg-gray-900/50 border border-gray-800 p-6 rounded-xl hover:border-gray-700 transition">
+        <div class="text-2xl mb-4">💰</div>
+        <h3 class="font-bold mb-2">Multi-currency</h3>
+        <p class="text-sm text-gray-400">USD, EUR, GBP out of the box. Add more with a single line.</p>
+      </div>
+      <div class="bg-gray-900/50 border border-gray-800 p-6 rounded-xl hover:border-gray-700 transition">
+        <div class="text-2xl mb-4">🔐</div>
+        <h3 class="font-bold mb-2">Bearer API keys</h3>
+        <p class="text-sm text-gray-400">Each agent gets a unique <code class="text-blue-400">ap_...</code> key. Simple, secure, revocable.</p>
+      </div>
+      <div class="bg-gray-900/50 border border-gray-800 p-6 rounded-xl hover:border-gray-700 transition">
+        <div class="text-2xl mb-4">⚡</div>
+        <h3 class="font-bold mb-2">Rate limiting</h3>
+        <p class="text-sm text-gray-400">Sliding-window limiter per agent and per IP. DDoS-resistant by default.</p>
+      </div>
+      <div class="bg-gray-900/50 border border-gray-800 p-6 rounded-xl hover:border-gray-700 transition">
+        <div class="text-2xl mb-4">📊</div>
+        <h3 class="font-bold mb-2">Audit logs</h3>
+        <p class="text-sm text-gray-400">Every action logged with IP, user-agent, and metadata. Compliance-ready.</p>
+      </div>
+      <div class="bg-gray-900/50 border border-gray-800 p-6 rounded-xl hover:border-gray-700 transition">
+        <div class="text-2xl mb-4">🔄</div>
+        <h3 class="font-bold mb-2">Subscriptions</h3>
+        <p class="text-sm text-gray-400">Recurring billing (daily/weekly/monthly/yearly) with automatic retries.</p>
+      </div>
+      <div class="bg-gray-900/50 border border-gray-800 p-6 rounded-xl hover:border-gray-700 transition">
+        <div class="text-2xl mb-4">↩️</div>
+        <h3 class="font-bold mb-2">Refunds</h3>
+        <p class="text-sm text-gray-400">Full or partial refunds with double-refund protection built in.</p>
+      </div>
+      <div class="bg-gray-900/50 border border-gray-800 p-6 rounded-xl hover:border-gray-700 transition">
+        <div class="text-2xl mb-4">🪝</div>
+        <h3 class="font-bold mb-2">HMAC webhooks</h3>
+        <p class="text-sm text-gray-400">Signed webhooks for topup, charge, refund events. Retry with backoff.</p>
+      </div>
+      <div class="bg-gray-900/50 border border-gray-800 p-6 rounded-xl hover:border-gray-700 transition">
+        <div class="text-2xl mb-4">💳</div>
+        <h3 class="font-bold mb-2">Stripe integration</h3>
+        <p class="text-sm text-gray-400">Top up via Stripe Checkout. Production-grade payment flow.</p>
+      </div>
+      <div class="bg-gray-900/50 border border-gray-800 p-6 rounded-xl hover:border-gray-700 transition">
+        <div class="text-2xl mb-4">🐍</div>
+        <h3 class="font-bold mb-2">Python SDK</h3>
+        <p class="text-sm text-gray-400">Official SDK. <code class="text-blue-400">pip install agentpay</code> and start in 30 seconds.</p>
+      </div>
     </div>
   </div>
 </section>
 
-<!-- Waitlist -->
-<section id="waitlist" class="px-6 py-16 bg-gray-900/50">
-  <div class="max-w-2xl mx-auto text-center">
-    <h2 class="text-3xl font-bold mb-4">Join the Waitlist</h2>
-    <p class="text-gray-400 mb-8">Be the first to try AgentPay when we launch.</p>
-    <form action="https://formspree.io/f/xqpelpba" method="POST" class="flex flex-col md:flex-row gap-3">
-      <input type="email" name="email" required placeholder="you@company.com"
-             class="flex-1 px-4 py-3 bg-gray-800 border border-gray-700 rounded-lg focus:border-blue-500 focus:outline-none">
-      <button type="submit" class="bg-blue-600 hover:bg-blue-700 px-8 py-3 rounded-lg font-semibold">
-        Notify Me
-      </button>
-    </form>
-    <p class="text-gray-500 text-sm mt-4">No spam. We'll email you once when it's ready.</p>
+<!-- ═══ HOW IT WORKS ═══ -->
+<section class="px-6 py-20 bg-gray-900/50">
+  <div class="max-w-5xl mx-auto">
+    <div class="text-center mb-16">
+      <h2 class="text-3xl md:text-4xl font-bold mb-4">How it works</h2>
+      <p class="text-gray-400">Three steps. Five minutes.</p>
+    </div>
+
+    <div class="grid md:grid-cols-3 gap-8">
+      <div class="text-center">
+        <div class="w-12 h-12 rounded-full bg-blue-600 flex items-center justify-center text-xl font-bold mx-auto mb-4">1</div>
+        <h3 class="font-bold mb-2">Create an agent</h3>
+        <p class="text-sm text-gray-400">One POST request. Get an ID and an API key back instantly.</p>
+      </div>
+      <div class="text-center">
+        <div class="w-12 h-12 rounded-full bg-blue-600 flex items-center justify-center text-xl font-bold mx-auto mb-4">2</div>
+        <h3 class="font-bold mb-2">Top up balance</h3>
+        <p class="text-sm text-gray-400">Add funds via API or Stripe Checkout. Balance is instant.</p>
+      </div>
+      <div class="text-center">
+        <div class="w-12 h-12 rounded-full bg-blue-600 flex items-center justify-center text-xl font-bold mx-auto mb-4">3</div>
+        <h3 class="font-bold mb-2">Charge for services</h3>
+        <p class="text-sm text-gray-400">Every API call or task costs what you decide. Full audit trail.</p>
+      </div>
+    </div>
   </div>
 </section>
 
-<!-- Footer -->
-<footer class="px-6 py-8 border-t border-gray-800 text-center text-gray-500 text-sm">
-  <p>AgentPay · Open source · <a href="https://github.com/7399795590/agentpay" class="text-blue-400 hover:underline">GitHub</a></p>
+<!-- ═══ PRICING ═══ -->
+<section id="pricing" class="px-6 py-20">
+  <div class="max-w-6xl mx-auto">
+    <div class="text-center mb-16">
+      <h2 class="text-3xl md:text-4xl font-bold mb-4">Simple, transparent pricing</h2>
+      <p class="text-gray-400">Start free. Scale when you're ready.</p>
+    </div>
+
+    <div class="grid md:grid-cols-3 gap-6">
+      <!-- Free -->
+      <div class="bg-gray-900/50 border border-gray-800 p-8 rounded-xl">
+        <div class="text-sm text-gray-400 mb-2">FREE</div>
+        <div class="text-4xl font-bold mb-6">$0<span class="text-lg text-gray-400 font-normal">/mo</span></div>
+        <ul class="space-y-3 text-sm mb-8">
+          <li class="flex items-start gap-2"><span class="text-green-400">✓</span> 100 transactions/mo</li>
+          <li class="flex items-start gap-2"><span class="text-green-400">✓</span> 1 agent</li>
+          <li class="flex items-start gap-2"><span class="text-green-400">✓</span> Full API access</li>
+          <li class="flex items-start gap-2"><span class="text-green-400">✓</span> Community support</li>
+        </ul>
+        <a href="#get-started" class="block text-center border border-gray-700 hover:border-gray-500 py-2 rounded-lg text-sm font-semibold">Start Free</a>
+      </div>
+
+      <!-- Pro (Featured) -->
+      <div class="bg-gradient-to-b from-blue-900/30 to-gray-900/50 border-2 border-blue-600 p-8 rounded-xl relative">
+        <div class="absolute -top-3 left-1/2 transform -translate-x-1/2 bg-blue-600 px-3 py-1 rounded-full text-xs font-semibold">POPULAR</div>
+        <div class="text-sm text-blue-400 mb-2">PRO</div>
+        <div class="text-4xl font-bold mb-6">$29<span class="text-lg text-gray-400 font-normal">/mo</span></div>
+        <ul class="space-y-3 text-sm mb-8">
+          <li class="flex items-start gap-2"><span class="text-green-400">✓</span> 10,000 transactions/mo</li>
+          <li class="flex items-start gap-2"><span class="text-green-400">✓</span> Unlimited agents</li>
+          <li class="flex items-start gap-2"><span class="text-green-400">✓</span> Webhooks + audit logs</li>
+          <li class="flex items-start gap-2"><span class="text-green-400">✓</span> Stripe integration</li>
+          <li class="flex items-start gap-2"><span class="text-green-400">✓</span> Priority email support</li>
+        </ul>
+        <a href="#get-started" class="block text-center bg-blue-600 hover:bg-blue-700 py-2 rounded-lg text-sm font-semibold">Start Pro Trial</a>
+      </div>
+
+      <!-- Business -->
+      <div class="bg-gray-900/50 border border-gray-800 p-8 rounded-xl">
+        <div class="text-sm text-gray-400 mb-2">BUSINESS</div>
+        <div class="text-4xl font-bold mb-6">$99<span class="text-lg text-gray-400 font-normal">/mo</span></div>
+        <ul class="space-y-3 text-sm mb-8">
+          <li class="flex items-start gap-2"><span class="text-green-400">✓</span> Unlimited transactions</li>
+          <li class="flex items-start gap-2"><span class="text-green-400">✓</span> Unlimited agents</li>
+          <li class="flex items-start gap-2"><span class="text-green-400">✓</span> SLA + uptime guarantee</li>
+          <li class="flex items-start gap-2"><span class="text-green-400">✓</span> Custom integrations</li>
+          <li class="flex items-start gap-2"><span class="text-green-400">✓</span> Dedicated support</li>
+        </ul>
+        <a href="mailto:hello@agentpay.dev" class="block text-center border border-gray-700 hover:border-gray-500 py-2 rounded-lg text-sm font-semibold">Contact Sales</a>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══ FAQ ═══ -->
+<section id="faq" class="px-6 py-20 bg-gray-900/50">
+  <div class="max-w-3xl mx-auto">
+    <div class="text-center mb-12">
+      <h2 class="text-3xl md:text-4xl font-bold mb-4">Frequently asked questions</h2>
+    </div>
+
+    <div class="space-y-3">
+      <details class="bg-gray-900/50 border border-gray-800 rounded-lg p-4">
+        <summary class="flex justify-between items-center font-semibold">
+          What is AgentPay?
+          <span class="chevron text-gray-400">▾</span>
+        </summary>
+        <p class="text-sm text-gray-400 mt-3">AgentPay is a payment API for AI agents. It gives each agent a balance, an API key, and a way to charge for services — without needing credit cards or human verification.</p>
+      </details>
+
+      <details class="bg-gray-900/50 border border-gray-800 rounded-lg p-4">
+        <summary class="flex justify-between items-center font-semibold">
+          How is this different from Stripe?
+          <span class="chevron text-gray-400">▾</span>
+        </summary>
+        <p class="text-sm text-gray-400 mt-3">Stripe is built for humans with credit cards. AgentPay is built for autonomous software. We handle the API-key-based auth, per-agent balances, and audit trails that autonomous systems need.</p>
+      </details>
+
+      <details class="bg-gray-900/50 border border-gray-800 rounded-lg p-4">
+        <summary class="flex justify-between items-center font-semibold">
+          Do I need a credit card to start?
+          <span class="chevron text-gray-400">▾</span>
+        </summary>
+        <p class="text-sm text-gray-400 mt-3">No. The Free plan gives you an API key instantly — no credit card required. Upgrade to Pro or Business when you're ready.</p>
+      </details>
+
+      <details class="bg-gray-900/50 border border-gray-800 rounded-lg p-4">
+        <summary class="flex justify-between items-center font-semibold">
+          What languages do you support?
+          <span class="chevron text-gray-400">▾</span>
+        </summary>
+        <p class="text-sm text-gray-400 mt-3">Any language that can make HTTP requests. We also provide an official Python SDK, and a Node.js SDK is coming soon. The REST API is fully documented with OpenAPI.</p>
+      </details>
+
+      <details class="bg-gray-900/50 border border-gray-800 rounded-lg p-4">
+        <summary class="flex justify-between items-center font-semibold">
+          How do refunds work?
+          <span class="chevron text-gray-400">▾</span>
+        </summary>
+        <p class="text-sm text-gray-400 mt-3">Every charge can be refunded with a single API call. We protect against double-refunds and log everything in the audit trail.</p>
+      </details>
+
+      <details class="bg-gray-900/50 border border-gray-800 rounded-lg p-4">
+        <summary class="flex justify-between items-center font-semibold">
+          Is my data safe?
+          <span class="chevron text-gray-400">▾</span>
+        </summary>
+        <p class="text-sm text-gray-400 mt-3">Yes. All API calls use bearer-token auth. Audit logs capture every action. We use PostgreSQL (Neon) with encrypted connections. Stripe handles payment data (PCI-DSS compliant).</p>
+      </details>
+    </div>
+  </div>
+</section>
+
+<!-- ═══ CTA / GET STARTED ═══ -->
+<section id="get-started" class="px-6 py-20">
+  <div class="max-w-3xl mx-auto text-center bg-gradient-to-b from-blue-900/20 to-gray-900/50 border border-blue-900/50 rounded-2xl p-12">
+    <h2 class="text-3xl md:text-4xl font-bold mb-4">Ready to give your agents a wallet?</h2>
+    <p class="text-gray-400 mb-8 max-w-xl mx-auto">Get an API key in 30 seconds. No credit card required.</p>
+
+    <div class="bg-gray-950 border border-gray-800 rounded-lg p-4 text-left max-w-xl mx-auto mb-6">
+      <pre class="code-scroll text-sm text-gray-300 font-mono"><code><span class="text-gray-500">$</span> <span class="text-green-400">curl</span> -X POST https://web-production-32de5.up.railway.app/agents/create \
+  -H <span class="text-yellow-300">"Content-Type: application/json"</span> \
+  -d <span class="text-yellow-300">'{"name":"my-first-agent"}'</span></code></pre>
+    </div>
+
+    <a href="https://web-production-32de5.up.railway.app/docs" class="inline-block bg-blue-600 hover:bg-blue-700 px-8 py-3 rounded-lg font-semibold">
+      Try it now →
+    </a>
+    <p class="text-xs text-gray-500 mt-4">Or view the <a href="https://github.com/7399795590/agentpay" class="text-blue-400 hover:underline">source on GitHub</a></p>
+  </div>
+</section>
+
+<!-- ═══ FOOTER ═══ -->
+<footer class="border-t border-gray-800 px-6 py-10">
+  <div class="max-w-6xl mx-auto">
+    <div class="grid md:grid-cols-4 gap-8 mb-8">
+      <div>
+        <div class="text-lg font-bold mb-3"><span class="text-blue-400">⚡</span> AgentPay</div>
+        <p class="text-sm text-gray-500">Payment infrastructure for AI agents.</p>
+      </div>
+      <div>
+        <div class="font-semibold mb-3 text-sm">Product</div>
+        <ul class="space-y-2 text-sm text-gray-400">
+          <li><a href="#features" class="hover:text-white">Features</a></li>
+          <li><a href="#pricing" class="hover:text-white">Pricing</a></li>
+          <li><a href="https://web-production-32de5.up.railway.app/docs" class="hover:text-white">API Docs</a></li>
+        </ul>
+      </div>
+      <div>
+        <div class="font-semibold mb-3 text-sm">Developers</div>
+        <ul class="space-y-2 text-sm text-gray-400">
+          <li><a href="https://github.com/7399795590/agentpay" class="hover:text-white">GitHub</a></li>
+          <li><a href="https://web-production-32de5.up.railway.app/openapi.json" class="hover:text-white">OpenAPI Spec</a></li>
+          <li><a href="https://web-production-32de5.up.railway.app/health" class="hover:text-white">Status</a></li>
+        </ul>
+      </div>
+      <div>
+        <div class="font-semibold mb-3 text-sm">Connect</div>
+        <ul class="space-y-2 text-sm text-gray-400">
+          <li><a href="https://twitter.com/M10Crypt" class="hover:text-white">Twitter / X</a></li>
+          <li><a href="mailto:hello@agentpay.dev" class="hover:text-white">Email</a></li>
+        </ul>
+      </div>
+    </div>
+    <div class="border-t border-gray-800 pt-6 text-xs text-gray-500 text-center">
+      © 2026 AgentPay. All rights reserved. · Built by <a href="https://twitter.com/M10Crypt" class="hover:text-white">@M10Crypt</a>
+    </div>
+  </div>
 </footer>
+
+<!-- ═══ LIVE STATUS CHECK ═══ -->
+<script>
+(async function checkStatus() {
+  const el = document.getElementById('live-status');
+  const API = 'https://web-production-32de5.up.railway.app';
+  try {
+    const start = Date.now();
+    const r = await fetch(API + '/health', { cache: 'no-store' });
+    const latency = Date.now() - start;
+    if (r.ok) {
+      const data = await r.json();
+      if (data.ok) {
+        el.innerHTML = '<span class="w-2 h-2 rounded-full bg-green-400 animate-pulse"></span>' +
+          '<span>API is LIVE · ' + latency + 'ms · v' + (data.version || '0.1.0') + '</span>';
+        return;
+      }
+    }
+  } catch (e) { /* ignore */ }
+  el.className = 'inline-flex items-center gap-2 bg-red-900/30 border border-red-800 text-red-400 px-4 py-1.5 rounded-full text-xs mb-6';
+  el.innerHTML = '<span class="w-2 h-2 rounded-full bg-red-400"></span><span>API status unknown</span>';
+})();
+</script>
 
 </body>
 </html>
