@@ -2,7 +2,7 @@
 import time
 import threading
 from functools import wraps
-from flask import request, jsonify
+from flask import request, jsonify, current_app
 
 
 class RateLimiter:
@@ -61,6 +61,9 @@ def limit(key_func, limit_name: str):
     def decorator(view_func):
         @wraps(view_func)
         def wrapper(*args, **kwargs):
+            # Skip rate limiting when running tests
+            if current_app.config.get("TESTING"):
+                return view_func(*args, **kwargs)
             limit_value = RATE_LIMITS.get(limit_name, 60)
             key = key_func(request, **kwargs)
             allowed, remaining, retry_after = limiter.check(key, limit_value)

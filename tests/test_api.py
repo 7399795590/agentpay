@@ -2,9 +2,9 @@
 import os
 import sys
 import tempfile
+import uuid
 from pathlib import Path
 
-_tmpdir = tempfile.mkdtemp(prefix="agentpay_test_")
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from app import app
@@ -15,13 +15,29 @@ client = None
 
 
 def setup_module():
+    """Set up a fresh in-memory test client for the whole module."""
     global client
     app.config["TESTING"] = True
-    app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///" + _tmpdir + "/test.db"
+    # Use in-memory SQLite so each test session starts fresh
+    app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
+    app.config["SQLALCHEMY_ENGINE_OPTIONS"] = {}
     with app.app_context():
         db.drop_all()
         db.create_all()
     client = app.test_client()
+
+
+def _create_agent(prefix="agent"):
+    """Helper: create an agent with unique name and return (agent_id, api_key)."""
+    name = f"{prefix}-{uuid.uuid4().hex[:8]}"
+    r = client.post("/agents/create", json={"name": name})
+    data = r.get_json()
+    return data["agent"]["id"], data["api_key"]
+
+
+def _auth(api_key):
+    """Helper: build Authorization header."""
+    return {"Authorization": "Bearer " + api_key}
 
 
 def test_health():
@@ -33,13 +49,14 @@ def test_health():
 
 
 def test_create_agent():
-    r = client.post("/agents/create", json={"name": "test-agent"})
+    name = "test-agent-" + uuid.uuid4().hex[:8]
+    r = client.post("/agents/create", json={"name": name})
     assert r.status_code == 201
     data = r.get_json()
     assert data["ok"] is True
     assert "agent" in data
     assert "api_key" in data
-    assert data["agent"]["name"] == "test-agent"
+    assert data["agent"]["name"] == name
     assert data["agent"]["balance"] == 0
     assert data["api_key"].startswith("ap_")
 
@@ -52,21 +69,23 @@ def test_create_agent_invalid_name():
 
 
 def test_full_cycle():
-    r = client.post("/agents/create", json={"name": "cycle-agent"})
-    agent_id = r.get_json()["agent"]["id"]
+    agent_id, api_key = _create_agent("cycle")
+    h = _auth(api_key)
 
     r = client.get("/agents/" + agent_id)
     assert r.get_json()["agent"]["balance"] == 0
 
-    r = client.post("/agents/" + agent_id + "/topup", json={"amount": 500})
+    r = client.post("/agents/" + agent_id + "/topup",
+                    json={"amount": 500}, headers=h)
     assert r.status_code == 200
     assert r.get_json()["agent"]["balance"] == 500
 
-    r = client.post("/agents/" + agent_id + "/charge", json={"amount": 30})
+    r = client.post("/agents/" + agent_id + "/charge",
+                    json={"amount": 30}, headers=h)
     assert r.status_code == 200
     assert r.get_json()["agent"]["balance"] == 470
 
-    r = client.get("/agents/" + agent_id + "/transactions")
+    r = client.get("/agents/" + agent_id + "/transactions", headers=h)
     data = r.get_json()
     assert data["count"] == 2
     types = [t["type"] for t in data["transactions"]]
@@ -75,10 +94,11 @@ def test_full_cycle():
 
 
 def test_insufficient_balance():
-    r = client.post("/agents/create", json={"name": "poor-agent"})
-    agent_id = r.get_json()["agent"]["id"]
+    agent_id, api_key = _create_agent("poor")
+    h = _auth(api_key)
 
-    r = client.post("/agents/" + agent_id + "/charge", json={"amount": 100})
+    r = client.post("/agents/" + agent_id + "/charge",
+                    json={"amount": 100}, headers=h)
     assert r.status_code == 402
     assert "Insufficient" in r.get_json()["error"]
 
@@ -89,14 +109,47 @@ def test_agent_not_found():
 
 
 def test_invalid_amount():
-    r = client.post("/agents/create", json={"name": "bad-amount"})
-    agent_id = r.get_json()["agent"]["id"]
+    agent_id, api_key = _create_agent("bad-amount")
+    h = _auth(api_key)
 
-    r = client.post("/agents/" + agent_id + "/topup", json={"amount": -10})
+    r = client.post("/agents/" + agent_id + "/topup",
+                    json={"amount": -10}, headers=h)
     assert r.status_code == 400
 
-    r = client.post("/agents/" + agent_id + "/topup", json={"amount": 0})
+    r = client.post("/agents/" + agent_id + "/topup",
+                    json={"amount": 0}, headers=h)
     assert r.status_code == 400
 
-    r = client.post("/agents/" + agent_id + "/topup", json={"amount": "100"})
+    r = client.post("/agents/" + agent_id + "/topup",
+                    json={"amount": "100"}, headers=h)
     assert r.status_code == 400
+
+
+def test_refund_flow():
+    """Test refund end-to-end (validates audit fix)."""
+    agent_id, api_key = _create_agent("refund")
+    h = _auth(api_key)
+
+    client.post("/agents/" + agent_id + "/topup", json={"amount": 500}, headers=h)
+    r = client.post("/agents/" + agent_id + "/charge",
+                    json={"amount": 100, "description": "test"}, headers=h)
+    tx_id = r.get_json()["transaction"]["id"]
+
+    r = client.post("/agents/" + agent_id + "/refund",
+                    json={"transaction_id": tx_id}, headers=h)
+    assert r.status_code == 200
+    assert r.get_json()["ok"] is True
+
+    r = client.post("/agents/" + agent_id + "/refund",
+                    json={"transaction_id": tx_id}, headers=h)
+    assert r.status_code == 409
+
+
+def test_admin_requires_auth():
+    """Admin endpoints require ADMIN_API_KEY."""
+    r = client.get("/admin/stats")
+    assert r.status_code == 401
+
+    r = client.get("/admin/stats",
+                   headers={"Authorization": "Bearer wrong_key"})
+    assert r.status_code == 403
