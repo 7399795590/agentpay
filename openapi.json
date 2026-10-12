@@ -10,8 +10,12 @@
   },
   "servers": [
     {
-      "url": "http://127.0.0.1:5000",
-      "description": "Local dev"
+      "url": "https://web-production-32de5.up.railway.app",
+      "description": "Production"
+    },
+    {
+      "url": "http://localhost:8080",
+      "description": "Local development"
     }
   ],
   "tags": [
