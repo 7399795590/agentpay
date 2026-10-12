@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://agentpay-pearl.vercel.app/sitemap.xml
