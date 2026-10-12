@@ -77,11 +77,16 @@ def verify_webhook(payload: bytes, signature: str) -> dict:
     return event
 
 
-def credit_agent_from_checkout(session: dict) -> tuple:
+def credit_agent_from_checkout(session) -> tuple:
     """Credit the agent's balance from a successful checkout session.
 
+    Accepts Stripe Session object OR dict.
     Returns (success, message, transaction_or_none).
     """
+    # Convert Stripe object → dict (SDK v7+ returns objects, not dicts)
+    if not isinstance(session, dict):
+        session = session.to_dict() if hasattr(session, "to_dict") else dict(session)
+
     metadata = session.get("metadata") or {}
     agent_id = metadata.get("agent_id")
     amount_str = metadata.get("amount_cents")
