@@ -1,145 +1,120 @@
 # AgentPay
 
-> Payment infrastructure for AI agents. Microtransactions without credit cards.
+**البنية التحتية للمدفوعات لوكلاء الذكاء الاصطناعي**
 
-[![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)]()
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)]()
-[![CI](https://github.com/7399795590/agentpay/actions/workflows/test.yml/badge.svg)](https://github.com/7399795590/agentpay/actions/workflows/test.yml)
+امنح وكلاء الذكاء الاصطناعي محفظة. API بسيط لإنشاء الوكلاء، شحن الأرصدة، فرض رسوم على الخدمات، معالجة المبالغ المستردة، وإدارة الاشتراكات.
 
-## The Problem
+---
 
-AI agents can't use credit cards. Stripe wasn't built for autonomous software.
-Traditional payment gateways require human approval.
+## ✨ المميزات
 
-**Market:** 176M+ AI agent transactions worth $73M annually. Most under $0.30.
+- 🔑 **مفاتيح API فريدة** (`ap_...`) لكل وكيل
+- 💰 **رصيد مدفوع مسبقاً** (بالسنت)
+- 📊 **سجل معاملات كامل**
+- 🔄 **اشتراكات متكررة** (يومي/أسبوعي/شهري/سنوي)
+- ↩️ **مبالغ مستردة** مع حماية من الاسترداد المزدوج
+- 🔐 **Webhooks موقّعة** بـ HMAC-SHA256
+- 💳 **تكامل Stripe** عبر Checkout
+- 📈 **سجلات تدقيق** لكل عملية
+- 🛡️ **حد المعدل** لكل IP + وكيل
+- 🐘 **PostgreSQL** جاهز للإنتاج
 
-## The Solution
+## 🚀 البداية السريعة
 
-AgentPay gives AI agents a simple API to:
-- Hold a prepaid balance (USD, EUR, GBP)
-- Pay for services autonomously
-- Support subscriptions + refunds
-- Send webhooks with HMAC signatures
+### 1. إنشاء وكيل
 
-## Quick Start
+```bash
+curl -X POST https://web-production-32de5.up.railway.app/agents/create -H "Content-Type: application/json" -d '{"name": "my-first-agent"}'
+```
 
-### 1. Run with Docker
+### 2. شحن الرصيد
 
-    git clone https://github.com/7399795590/agentpay.git
-    cd agentpay
-    docker-compose up
+```bash
+curl -X POST https://web-production-32de5.up.railway.app/agents/{AGENT_ID}/topup -H "Authorization: Bearer ap_xxxxx" -H "Content-Type: application/json" -d '{"amount": 1000, "currency": "USD"}'
+```
 
-### 2. Or run locally
+### 3. فرض رسوم
 
-    pip install -r requirements.txt
-    python app.py
+```bash
+curl -X POST https://web-production-32de5.up.railway.app/agents/{AGENT_ID}/charge -H "Authorization: Bearer ap_xxxxx" -H "Content-Type: application/json" -d '{"amount": 25, "description": "GPT-4 call"}'
+```
 
-Server: http://127.0.0.1:5000
-Docs: http://127.0.0.1:5000/docs
+## 🏗️ البنية التقنية
 
-## Features (15/15 completed)
+- **الخلفية:** Flask + SQLAlchemy + Gunicorn
+- **قاعدة البيانات:** PostgreSQL (Neon) / SQLite (للتطوير)
+- **المدفوعات:** Stripe Checkout
+- **الاستضافة:** Railway (API) + Vercel (واجهة)
+- **CI/CD:** GitHub Actions (3 إصدارات Python)
+- **الاختبارات:** pytest (9 اختبارات)
 
-### Core
-- [x] REST API (12 endpoints)
-- [x] SQLite / PostgreSQL
-- [x] API key authentication
-- [x] Rate limiting (per IP + per agent)
-- [x] Structured JSON logging
-- [x] Unified error handlers
+---
 
-### Payments
-- [x] Multi-currency (USD, EUR, GBP)
-- [x] Stripe Checkout integration
-- [x] Recurring subscriptions (daily/weekly/monthly/yearly)
-- [x] Refunds (with double-refund protection)
-- [x] Webhooks with HMAC-SHA256 signatures + retry
+## 📖 نقاط النهاية
 
-### Developer Experience
-- [x] Python SDK (`pip install agentpay-sdk`)
-- [x] OpenAPI 3.0 spec + Swagger UI at /docs
-- [x] Docker + docker-compose
-- [x] Web dashboard
-- [x] Admin API (stats, list, delete, set-balance)
-- [x] Audit log (every sensitive operation)
+التوثيق التفاعلي: [web-production-32de5.up.railway.app/docs](https://web-production-32de5.up.railway.app/docs)
 
-## API Overview
+### الوكلاء
 
-| Method | Endpoint | Description |
-|---|---|---|
-| GET | /health | Service health |
-| GET | /docs | Swagger UI |
-| GET | /openapi.json | OpenAPI spec |
-| POST | /agents/create | Create agent |
-| GET | /agents/{id} | Get agent |
-| POST | /agents/{id}/topup | Add balance |
-| POST | /agents/{id}/charge | Deduct |
-| GET | /agents/{id}/transactions | List transactions |
-| POST | /agents/{id}/refund | Refund a charge |
-| POST | /agents/{id}/subscriptions/create | New subscription |
-| GET | /agents/{id}/subscriptions | List subscriptions |
-| POST | /agents/{id}/stripe/checkout | Stripe checkout |
-| GET | /admin/stats | Admin: system stats |
-| GET | /admin/audit | Admin: audit log |
+- `POST /agents/create` — إنشاء وكيل جديد
+- `GET /agents/{id}` — جلب بيانات وكيل
+- `POST /agents/{id}/topup` — شحن الرصيد
+- `POST /agents/{id}/charge` — فرض رسوم
+- `POST /agents/{id}/refund` — استرداد
+- `GET /agents/{id}/transactions` — المعاملات
 
-See [openapi.json](openapi.json) for full spec.
+### الاشتراكات
 
-## Amounts
+- `POST /agents/{id}/subscriptions/create` — إنشاء اشتراك
+- `GET /agents/{id}/subscriptions` — قائمة الاشتراكات
+- `POST /agents/{id}/subscriptions/{sub_id}/cancel` — إلغاء
 
-All amounts are **integers in smallest currency unit** (cents):
-- $5.00 = `500`
-- €0.30 = `30`
-- £1.00 = `100`
+### Stripe
 
-## Python SDK
+- `POST /agents/{id}/stripe/checkout` — إنشاء جلسة دفع
+- `POST /stripe/webhook` — معالج webhook
 
-    pip install git+https://github.com/7399795590/agentpay.git#subdirectory=sdk/python
+### Admin
 
-    from agentpay import AgentPayClient
+- `GET /admin/stats` — إحصائيات
+- `GET /admin/agents` — كل الوكلاء
+- `GET /admin/audit` — سجلات التدقيق
 
-    client = AgentPayClient(api_key="ap_...", agent_id="...")
-    client.charge(amount_cents=30, description="API call")
-    print(client.get_balance())
+---
 
-## Environment Variables
+## 🧪 الاختبارات
 
-| Variable | Required | Description |
-|---|---|---|
-| `DATABASE_URL` | No | PostgreSQL URL (defaults to SQLite) |
-| `STRIPE_SECRET_KEY` | For Stripe | `sk_test_...` or `sk_live_...` |
-| `STRIPE_PUBLISHABLE_KEY` | For Stripe | `pk_test_...` |
-| `STRIPE_WEBHOOK_SECRET` | For Stripe webhooks | `whsec_...` |
-| `WEBHOOK_SECRET` | No | HMAC secret for outgoing webhooks |
-| `ADMIN_API_KEY` | For admin | Secret for `/admin/*` endpoints |
+```bash
+pytest tests/ -v
+```
 
-## Architecture
+9 اختبارات تغطي: الصحة، إنشاء وكيل، دورة دفع كاملة، رصيد غير كافٍ، استرداد، مصادقة Admin.
 
-    agentpay/
-    ├── app.py                    Flask app + all routes
-    ├── models.py                 SQLAlchemy: Agent, Transaction, Subscription, AuditLog
-    ├── database.py               DB setup (SQLite/Postgres)
-    ├── ratelimit.py              Sliding-window rate limiter
-    ├── webhooks.py               HMAC-signed webhooks with retry
-    ├── stripe_integration.py     Stripe Checkout
-    ├── logging_utils.py          Structured JSON logs
-    ├── openapi.json              OpenAPI 3.0 spec
-    ├── dashboard.html            Web dashboard
-    ├── index.html                Landing page
-    ├── sdk/python/               Python SDK
-    ├── tests/                    pytest suite
-    ├── Dockerfile
-    ├── docker-compose.yml
-    └── Procfile                  For Railway/Heroku
+---
 
-## Testing
+## 🔐 الأمان
 
-    pip install pytest
-    python -m pytest tests/ -v
+- ✅ مصادقة Bearer Token
+- ✅ توقيعات HMAC-SHA256 للـ Webhooks
+- ✅ حد المعدل لكل IP + وكيل
+- ✅ سجلات تدقيق لكل عملية
+- ✅ حماية من SQL Injection (ORM)
+- ✅ إعدادات من متغيرات البيئة
 
-## License
+---
 
-MIT
+## 🤝 المساهمة
 
-## Contact
+طلبات السحب مرحب بها! للتغييرات الكبيرة، افتح issue أولاً.
 
-GitHub: https://github.com/7399795590/agentpay
-Live: https://agentpay-pearl.vercel.app
+## 📄 الترخيص
+
+MIT © [@M10Crypt](https://twitter.com/M10Crypt)
+
+---
+
+**صُنع بـ ❤️ في اليمن 🇾🇪**
+
+---
+
+[الموقع](https://agentpay-pearl.vercel.app) · [التوثيق](https://agentpay-pearl.vercel.app/docs.html) · [الحالة](https://agentpay-pearl.vercel.app/status.html)
