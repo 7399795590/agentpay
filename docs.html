@@ -1,0 +1,573 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AgentPay — API Documentation</title>
+<meta name="description" content="Complete API documentation for AgentPay — payment infrastructure for AI agents.">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⚡</text></svg>">
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+tailwind.config = {
+  theme: { extend: { colors: { brand: { 500:'#3b82f6', 600:'#2563eb', 700:'#1d4ed8' } } } }
+}
+</script>
+<style>
+  html { scroll-behavior: smooth; scroll-padding-top: 80px; }
+  .code-scroll { overflow-x: auto; }
+  .code-scroll::-webkit-scrollbar { height: 6px; }
+  .code-scroll::-webkit-scrollbar-thumb { background: #374151; border-radius: 3px; }
+  .copy-btn { opacity: 0; transition: opacity 0.2s; }
+  pre:hover .copy-btn { opacity: 1; }
+  .method { font-size: 10px; font-weight: 700; padding: 2px 6px; border-radius: 4px; letter-spacing: 0.5px; }
+  .method-get { background: #065f46; color: #6ee7b7; }
+  .method-post { background: #1e3a8a; color: #93c5fd; }
+  .method-delete { background: #7f1d1d; color: #fca5a5; }
+  .nav-item.active { background: rgba(37,99,235,0.1); color: #60a5fa; border-left-color: #3b82f6; }
+  .nav-item { border-left: 2px solid transparent; }
+  .nav-item:hover { background: rgba(255,255,255,0.03); }
+  #sidebar { scrollbar-width: thin; }
+  #sidebar::-webkit-scrollbar { width: 4px; }
+  #sidebar::-webkit-scrollbar-thumb { background: #374151; border-radius: 2px; }
+</style>
+</head>
+<body class="bg-gray-950 text-gray-200 antialiased">
+
+<!-- ═══ TOP NAV ═══ -->
+<nav class="border-b border-gray-800 px-4 py-3 sticky top-0 bg-gray-950/95 backdrop-blur z-50">
+  <div class="flex items-center justify-between max-w-full">
+    <div class="flex items-center gap-4">
+      <button id="sidebar-toggle" class="lg:hidden text-gray-400 hover:text-white">☰</button>
+      <a href="/" class="text-lg font-bold flex items-center gap-2">
+        <span class="text-blue-400">⚡</span> AgentPay
+      </a>
+      <span class="hidden md:inline text-gray-600">/</span>
+      <span class="hidden md:inline text-sm text-gray-400">Documentation</span>
+    </div>
+    <div class="flex items-center gap-3">
+      <div class="hidden md:block relative">
+        <input id="search" type="text" placeholder="Search docs..." class="bg-gray-900 border border-gray-800 rounded-lg px-3 py-1.5 text-sm w-64 focus:outline-none focus:border-blue-600">
+      </div>
+      <a href="https://github.com/7399795590/agentpay" class="text-sm text-gray-400 hover:text-white">GitHub</a>
+      <a href="/" class="text-sm bg-blue-600 hover:bg-blue-700 px-3 py-1.5 rounded-lg">← Home</a>
+    </div>
+  </div>
+</nav>
+
+<div class="flex">
+  <!-- ═══ SIDEBAR ═══ -->
+  <aside id="sidebar" class="fixed lg:sticky top-[57px] h-[calc(100vh-57px)] w-64 bg-gray-950 border-r border-gray-800 overflow-y-auto z-40 transform -translate-x-full lg:translate-x-0 transition-transform">
+    <nav class="py-4 text-sm">
+
+      <div class="px-4 mb-2 text-xs font-bold text-gray-500 uppercase tracking-wider">Getting Started</div>
+      <a href="#intro" class="nav-item block px-4 py-2 text-gray-400">Introduction</a>
+      <a href="#quickstart" class="nav-item block px-4 py-2 text-gray-400">Quickstart</a>
+      <a href="#authentication" class="nav-item block px-4 py-2 text-gray-400">Authentication</a>
+      <a href="#errors" class="nav-item block px-4 py-2 text-gray-400">Error Handling</a>
+
+      <div class="px-4 mt-6 mb-2 text-xs font-bold text-gray-500 uppercase tracking-wider">Agents</div>
+      <a href="#create-agent" class="nav-item block px-4 py-2 text-gray-400">Create Agent</a>
+      <a href="#get-agent" class="nav-item block px-4 py-2 text-gray-400">Get Agent</a>
+      <a href="#topup" class="nav-item block px-4 py-2 text-gray-400">Top Up</a>
+      <a href="#charge" class="nav-item block px-4 py-2 text-gray-400">Charge</a>
+      <a href="#refund" class="nav-item block px-4 py-2 text-gray-400">Refund</a>
+      <a href="#transactions" class="nav-item block px-4 py-2 text-gray-400">Transactions</a>
+
+      <div class="px-4 mt-6 mb-2 text-xs font-bold text-gray-500 uppercase tracking-wider">Subscriptions</div>
+      <a href="#create-sub" class="nav-item block px-4 py-2 text-gray-400">Create Subscription</a>
+      <a href="#list-subs" class="nav-item block px-4 py-2 text-gray-400">List Subscriptions</a>
+      <a href="#cancel-sub" class="nav-item block px-4 py-2 text-gray-400">Cancel Subscription</a>
+
+      <div class="px-4 mt-6 mb-2 text-xs font-bold text-gray-500 uppercase tracking-wider">Stripe</div>
+      <a href="#stripe-checkout" class="nav-item block px-4 py-2 text-gray-400">Checkout</a>
+      <a href="#stripe-webhook" class="nav-item block px-4 py-2 text-gray-400">Webhook</a>
+      <a href="#stripe-config" class="nav-item block px-4 py-2 text-gray-400">Config</a>
+
+      <div class="px-4 mt-6 mb-2 text-xs font-bold text-gray-500 uppercase tracking-wider">Admin</div>
+      <a href="#admin-stats" class="nav-item block px-4 py-2 text-gray-400">Stats</a>
+      <a href="#admin-agents" class="nav-item block px-4 py-2 text-gray-400">List Agents</a>
+      <a href="#admin-delete" class="nav-item block px-4 py-2 text-gray-400">Delete Agent</a>
+      <a href="#admin-balance" class="nav-item block px-4 py-2 text-gray-400">Set Balance</a>
+      <a href="#admin-audit" class="nav-item block px-4 py-2 text-gray-400">Audit Log</a>
+      <a href="#admin-billing" class="nav-item block px-4 py-2 text-gray-400">Run Billing</a>
+
+      <div class="px-4 mt-6 mb-2 text-xs font-bold text-gray-500 uppercase tracking-wider">Utility</div>
+      <a href="#health" class="nav-item block px-4 py-2 text-gray-400">Health Check</a>
+
+    </nav>
+  </aside>
+
+  <!-- ═══ MAIN CONTENT ═══ -->
+  <main class="flex-1 min-w-0 px-6 md:px-12 py-8 max-w-4xl mx-auto">
+
+<!-- ════════ INTRODUCTION ════════ -->
+<section id="intro" class="mb-16 scroll-mt-20">
+  <h1 class="text-4xl font-bold text-white mb-4">API Documentation</h1>
+  <p class="text-lg text-gray-400 mb-6">Complete reference for the AgentPay REST API. Everything you need to add payments to your AI agents.</p>
+
+  <div class="bg-blue-900/20 border border-blue-900/50 rounded-lg p-4 mb-6">
+    <div class="flex items-start gap-3">
+      <span class="text-blue-400 text-xl">💡</span>
+      <div>
+        <div class="font-semibold text-blue-300 mb-1">Base URL</div>
+        <code class="text-sm text-blue-200 font-mono">https://web-production-32de5.up.railway.app</code>
+      </div>
+    </div>
+  </div>
+
+  <div class="grid md:grid-cols-3 gap-4 mt-8">
+    <a href="#quickstart" class="bg-gray-900 border border-gray-800 rounded-lg p-4 hover:border-blue-600 transition">
+      <div class="text-2xl mb-2">🚀</div>
+      <div class="font-semibold text-white mb-1">Quickstart</div>
+      <div class="text-xs text-gray-400">Get running in 5 minutes</div>
+    </a>
+    <a href="#authentication" class="bg-gray-900 border border-gray-800 rounded-lg p-4 hover:border-blue-600 transition">
+      <div class="text-2xl mb-2">🔐</div>
+      <div class="font-semibold text-white mb-1">Authentication</div>
+      <div class="text-xs text-gray-400">API keys & security</div>
+    </a>
+    <a href="#errors" class="bg-gray-900 border border-gray-800 rounded-lg p-4 hover:border-blue-600 transition">
+      <div class="text-2xl mb-2">⚠️</div>
+      <div class="font-semibold text-white mb-1">Error Handling</div>
+      <div class="text-xs text-gray-400">Status codes & responses</div>
+    </a>
+  </div>
+</section>
+
+<!-- ════════ QUICKSTART ════════ -->
+<section id="quickstart" class="mb-16 scroll-mt-20">
+  <h2 class="text-3xl font-bold text-white mb-4">Quickstart</h2>
+  <p class="text-gray-400 mb-6">Create your first agent and run a payment flow in under 5 minutes.</p>
+
+  <h3 class="text-xl font-semibold text-white mt-8 mb-3">Step 1 — Create an agent</h3>
+  <div class="bg-gray-900 border border-gray-800 rounded-lg overflow-hidden mb-4">
+    <div class="flex items-center justify-between px-4 py-2 border-b border-gray-800 bg-gray-950/50">
+      <span class="text-xs text-gray-500 font-mono">POST /agents/create</span>
+      <button class="copy-btn text-xs text-gray-400 hover:text-white" onclick="copyCode(this)">📋 Copy</button>
+    </div>
+    <pre class="code-scroll p-4 text-sm font-mono text-gray-300"><code>curl -X POST https://web-production-32de5.up.railway.app/agents/create \
+  -H "Content-Type: application/json" \
+  -d '{"name": "my-first-agent"}'</code></pre>
+  </div>
+
+  <p class="text-gray-400 text-sm mb-4">Response:</p>
+  <div class="bg-gray-900 border border-gray-800 rounded-lg overflow-hidden mb-4">
+    <pre class="code-scroll p-4 text-sm font-mono text-gray-300"><code>{
+  "ok": true,
+  "agent": {
+    "id": "a1b2c3d4e5f6",
+    "name": "my-first-agent",
+    "balance": 0,
+    "currency": "USD"
+  },
+  "api_key": "ap_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+}</code></pre>
+  </div>
+
+  <div class="bg-yellow-900/20 border border-yellow-900/50 rounded-lg p-3 mb-6">
+    <div class="text-sm text-yellow-300">
+      <strong>⚠️ Save the <code>api_key</code>!</strong> It's shown only once. Store it securely.
+    </div>
+  </div>
+
+  <h3 class="text-xl font-semibold text-white mt-8 mb-3">Step 2 — Top up balance</h3>
+  <div class="bg-gray-900 border border-gray-800 rounded-lg overflow-hidden mb-4">
+    <div class="flex items-center justify-between px-4 py-2 border-b border-gray-800 bg-gray-950/50">
+      <span class="text-xs text-gray-500 font-mono">POST /agents/{id}/topup</span>
+      <button class="copy-btn text-xs text-gray-400 hover:text-white" onclick="copyCode(this)">📋 Copy</button>
+    </div>
+    <pre class="code-scroll p-4 text-sm font-mono text-gray-300"><code>curl -X POST https://web-production-32de5.up.railway.app/agents/a1b2c3d4e5f6/topup \
+  -H "Authorization: Bearer ap_xxxxxxxxxxxxxxxx" \
+  -H "Content-Type: application/json" \
+  -d '{"amount": 1000, "currency": "USD"}'</code></pre>
+  </div>
+
+  <h3 class="text-xl font-semibold text-white mt-8 mb-3">Step 3 — Charge for a service</h3>
+  <div class="bg-gray-900 border border-gray-800 rounded-lg overflow-hidden mb-4">
+    <div class="flex items-center justify-between px-4 py-2 border-b border-gray-800 bg-gray-950/50">
+      <span class="text-xs text-gray-500 font-mono">POST /agents/{id}/charge</span>
+      <button class="copy-btn text-xs text-gray-400 hover:text-white" onclick="copyCode(this)">📋 Copy</button>
+    </div>
+    <pre class="code-scroll p-4 text-sm font-mono text-gray-300"><code>curl -X POST https://web-production-32de5.up.railway.app/agents/a1b2c3d4e5f6/charge \
+  -H "Authorization: Bearer ap_xxxxxxxxxxxxxxxx" \
+  -H "Content-Type: application/json" \
+  -d '{"amount": 25, "description": "GPT-4 API call"}'</code></pre>
+  </div>
+</section>
+
+<!-- ════════ AUTHENTICATION ════════ -->
+<section id="authentication" class="mb-16 scroll-mt-20">
+  <h2 class="text-3xl font-bold text-white mb-4">Authentication</h2>
+  <p class="text-gray-400 mb-6">AgentPay uses bearer-token authentication. Each agent gets a unique API key.</p>
+
+  <h3 class="text-xl font-semibold text-white mb-3">Header format</h3>
+  <div class="bg-gray-900 border border-gray-800 rounded-lg overflow-hidden mb-6">
+    <pre class="code-scroll p-4 text-sm font-mono text-gray-300"><code>Authorization: Bearer ap_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx</code></pre>
+  </div>
+
+  <div class="bg-gray-900 border border-gray-800 rounded-lg p-4">
+    <div class="font-semibold text-white mb-3">Security rules</div>
+    <ul class="text-sm text-gray-400 space-y-2">
+      <li>✅ Never expose your API key in client-side code</li>
+      <li>✅ Store keys in environment variables (<code class="text-blue-400">.env</code>)</li>
+      <li>✅ Rotate keys if leaked (create a new agent)</li>
+      <li>❌ Never commit keys to GitHub</li>
+      <li>❌ Never share keys in public channels</li>
+    </ul>
+  </div>
+</section>
+
+<!-- ════════ ERRORS ════════ -->
+<section id="errors" class="mb-16 scroll-mt-20">
+  <h2 class="text-3xl font-bold text-white mb-4">Error Handling</h2>
+  <p class="text-gray-400 mb-6">All errors return JSON with an <code class="text-blue-400">ok: false</code> field and an <code class="text-blue-400">error</code> message.</p>
+
+  <div class="overflow-x-auto">
+    <table class="w-full text-sm border border-gray-800 rounded-lg overflow-hidden">
+      <thead class="bg-gray-900">
+        <tr>
+          <th class="text-left px-4 py-3 font-semibold text-gray-300 border-b border-gray-800">Code</th>
+          <th class="text-left px-4 py-3 font-semibold text-gray-300 border-b border-gray-800">Meaning</th>
+          <th class="text-left px-4 py-3 font-semibold text-gray-300 border-b border-gray-800">Common cause</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-gray-800">
+        <tr><td class="px-4 py-3 font-mono text-green-400">200</td><td class="px-4 py-3 text-gray-300">OK</td><td class="px-4 py-3 text-gray-500">Success</td></tr>
+        <tr><td class="px-4 py-3 font-mono text-green-400">201</td><td class="px-4 py-3 text-gray-300">Created</td><td class="px-4 py-3 text-gray-500">Agent/subscription created</td></tr>
+        <tr><td class="px-4 py-3 font-mono text-yellow-400">400</td><td class="px-4 py-3 text-gray-300">Bad Request</td><td class="px-4 py-3 text-gray-500">Invalid input (missing name, bad amount)</td></tr>
+        <tr><td class="px-4 py-3 font-mono text-yellow-400">401</td><td class="px-4 py-3 text-gray-300">Unauthorized</td><td class="px-4 py-3 text-gray-500">Missing/invalid API key</td></tr>
+        <tr><td class="px-4 py-3 font-mono text-yellow-400">403</td><td class="px-4 py-3 text-gray-300">Forbidden</td><td class="px-4 py-3 text-gray-500">Wrong admin key</td></tr>
+        <tr><td class="px-4 py-3 font-mono text-yellow-400">404</td><td class="px-4 py-3 text-gray-300">Not Found</td><td class="px-4 py-3 text-gray-500">Agent/subscription doesn't exist</td></tr>
+        <tr><td class="px-4 py-3 font-mono text-orange-400">409</td><td class="px-4 py-3 text-gray-300">Conflict</td><td class="px-4 py-3 text-gray-500">Already refunded, duplicate name</td></tr>
+        <tr><td class="px-4 py-3 font-mono text-orange-400">402</td><td class="px-4 py-3 text-gray-300">Payment Required</td><td class="px-4 py-3 text-gray-500">Insufficient balance</td></tr>
+        <tr><td class="px-4 py-3 font-mono text-red-400">429</td><td class="px-4 py-3 text-gray-300">Too Many Requests</td><td class="px-4 py-3 text-gray-500">Rate limit exceeded</td></tr>
+        <tr><td class="px-4 py-3 font-mono text-red-400">500</td><td class="px-4 py-3 text-gray-300">Server Error</td><td class="px-4 py-3 text-gray-500">Contact support</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3 class="text-xl font-semibold text-white mt-8 mb-3">Example error response</h3>
+  <div class="bg-gray-900 border border-gray-800 rounded-lg overflow-hidden">
+    <pre class="code-scroll p-4 text-sm font-mono text-gray-300"><code>{
+  "ok": false,
+  "error": "Insufficient balance (need 100, have 50)"
+}</code></pre>
+  </div>
+</section>
+
+<!-- ════════ CREATE AGENT ════════ -->
+<section id="create-agent" class="mb-12 scroll-mt-20 pb-12 border-b border-gray-800">
+  <div class="flex items-center gap-3 mb-4">
+    <span class="method method-post">POST</span>
+    <code class="text-lg text-white font-mono">/agents/create</code>
+  </div>
+  <p class="text-gray-400 mb-6">Create a new agent with a starting balance of $0. Returns a unique API key.</p>
+
+  <h3 class="font-semibold text-white mb-3">Request body</h3>
+  <div class="overflow-x-auto mb-6">
+    <table class="w-full text-sm border border-gray-800 rounded-lg overflow-hidden">
+      <thead class="bg-gray-900">
+        <tr>
+          <th class="text-left px-4 py-2 text-gray-300 border-b border-gray-800">Field</th>
+          <th class="text-left px-4 py-2 text-gray-300 border-b border-gray-800">Type</th>
+          <th class="text-left px-4 py-2 text-gray-300 border-b border-gray-800">Required</th>
+          <th class="text-left px-4 py-2 text-gray-300 border-b border-gray-800">Description</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-gray-800">
+        <tr><td class="px-4 py-2 font-mono text-blue-400">name</td><td class="px-4 py-2 text-gray-400">string</td><td class="px-4 py-2 text-red-400">Yes</td><td class="px-4 py-2 text-gray-500">Unique agent name (max 100 chars)</td></tr>
+        <tr><td class="px-4 py-2 font-mono text-blue-400">email</td><td class="px-4 py-2 text-gray-400">string</td><td class="px-4 py-2 text-gray-500">No</td><td class="px-4 py-2 text-gray-500">Optional contact email</td></tr>
+        <tr><td class="px-4 py-2 font-mono text-blue-400">currency</td><td class="px-4 py-2 text-gray-400">string</td><td class="px-4 py-2 text-gray-500">No</td><td class="px-4 py-2 text-gray-500">USD / EUR / GBP (default: USD)</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3 class="font-semibold text-white mb-3">Example</h3>
+  <div class="bg-gray-900 border border-gray-800 rounded-lg overflow-hidden">
+    <div class="flex items-center justify-between px-4 py-2 border-b border-gray-800 bg-gray-950/50">
+      <span class="text-xs text-gray-500 font-mono">cURL</span>
+      <button class="copy-btn text-xs text-gray-400 hover:text-white" onclick="copyCode(this)">📋 Copy</button>
+    </div>
+    <pre class="code-scroll p-4 text-sm font-mono text-gray-300"><code>curl -X POST https://web-production-32de5.up.railway.app/agents/create \
+  -H "Content-Type: application/json" \
+  -d '{"name": "my-agent", "email": "me@example.com"}'</code></pre>
+  </div>
+</section>
+
+<!-- ════════ GET AGENT ════════ -->
+<section id="get-agent" class="mb-12 scroll-mt-20 pb-12 border-b border-gray-800">
+  <div class="flex items-center gap-3 mb-4">
+    <span class="method method-get">GET</span>
+    <code class="text-lg text-white font-mono">/agents/{agent_id}</code>
+  </div>
+  <p class="text-gray-400 mb-6">Retrieve an agent's current balance and metadata. No auth required.</p>
+
+  <div class="bg-gray-900 border border-gray-800 rounded-lg overflow-hidden">
+    <div class="flex items-center justify-between px-4 py-2 border-b border-gray-800 bg-gray-950/50">
+      <span class="text-xs text-gray-500 font-mono">cURL</span>
+      <button class="copy-btn text-xs text-gray-400 hover:text-white" onclick="copyCode(this)">📋 Copy</button>
+    </div>
+    <pre class="code-scroll p-4 text-sm font-mono text-gray-300"><code>curl https://web-production-32de5.up.railway.app/agents/a1b2c3d4e5f6</code></pre>
+  </div>
+</section>
+
+<!-- ════════ TOPUP ════════ -->
+<section id="topup" class="mb-12 scroll-mt-20 pb-12 border-b border-gray-800">
+  <div class="flex items-center gap-3 mb-4">
+    <span class="method method-post">POST</span>
+    <code class="text-lg text-white font-mono">/agents/{agent_id}/topup</code>
+  </div>
+  <p class="text-gray-400 mb-6">Add funds to an agent's balance. Amount in <strong class="text-white">cents</strong> (integer).</p>
+
+  <div class="bg-blue-900/20 border border-blue-900/50 rounded-lg p-3 mb-6">
+    <div class="text-sm text-blue-200">
+      💡 <strong>Amount is in cents:</strong> <code>$10.00</code> = <code>1000</code>
+    </div>
+  </div>
+
+  <div class="bg-gray-900 border border-gray-800 rounded-lg overflow-hidden">
+    <div class="flex items-center justify-between px-4 py-2 border-b border-gray-800 bg-gray-950/50">
+      <span class="text-xs text-gray-500 font-mono">cURL</span>
+      <button class="copy-btn text-xs text-gray-400 hover:text-white" onclick="copyCode(this)">📋 Copy</button>
+    </div>
+    <pre class="code-scroll p-4 text-sm font-mono text-gray-300"><code>curl -X POST https://web-production-32de5.up.railway.app/agents/a1b2c3d4e5f6/topup \
+  -H "Authorization: Bearer ap_xxxxx" \
+  -H "Content-Type: application/json" \
+  -d '{"amount": 1000, "currency": "USD"}'</code></pre>
+  </div>
+</section>
+
+<!-- ════════ CHARGE ════════ -->
+<section id="charge" class="mb-12 scroll-mt-20 pb-12 border-b border-gray-800">
+  <div class="flex items-center gap-3 mb-4">
+    <span class="method method-post">POST</span>
+    <code class="text-lg text-white font-mono">/agents/{agent_id}/charge</code>
+  </div>
+  <p class="text-gray-400 mb-6">Deduct funds from an agent's balance. Returns <code>402</code> if insufficient.</p>
+
+  <div class="bg-gray-900 border border-gray-800 rounded-lg overflow-hidden">
+    <div class="flex items-center justify-between px-4 py-2 border-b border-gray-800 bg-gray-950/50">
+      <span class="text-xs text-gray-500 font-mono">cURL</span>
+      <button class="copy-btn text-xs text-gray-400 hover:text-white" onclick="copyCode(this)">📋 Copy</button>
+    </div>
+    <pre class="code-scroll p-4 text-sm font-mono text-gray-300"><code>curl -X POST https://web-production-32de5.up.railway.app/agents/a1b2c3d4e5f6/charge \
+  -H "Authorization: Bearer ap_xxxxx" \
+  -H "Content-Type: application/json" \
+  -d '{"amount": 25, "description": "GPT-4 call"}'</code></pre>
+  </div>
+</section>
+
+<!-- ════════ REFUND ════════ -->
+<section id="refund" class="mb-12 scroll-mt-20 pb-12 border-b border-gray-800">
+  <div class="flex items-center gap-3 mb-4">
+    <span class="method method-post">POST</span>
+    <code class="text-lg text-white font-mono">/agents/{agent_id}/refund</code>
+  </div>
+  <p class="text-gray-400 mb-6">Refund a previous charge. Protected against double-refunds (returns <code>409</code>).</p>
+
+  <div class="bg-gray-900 border border-gray-800 rounded-lg overflow-hidden">
+    <div class="flex items-center justify-between px-4 py-2 border-b border-gray-800 bg-gray-950/50">
+      <span class="text-xs text-gray-500 font-mono">cURL</span>
+      <button class="copy-btn text-xs text-gray-400 hover:text-white" onclick="copyCode(this)">📋 Copy</button>
+    </div>
+    <pre class="code-scroll p-4 text-sm font-mono text-gray-300"><code>curl -X POST https://web-production-32de5.up.railway.app/agents/a1b2c3d4e5f6/refund \
+  -H "Authorization: Bearer ap_xxxxx" \
+  -H "Content-Type: application/json" \
+  -d '{"transaction_id": 42, "reason": "Customer request"}'</code></pre>
+  </div>
+</section>
+
+<!-- ════════ TRANSACTIONS ════════ -->
+<section id="transactions" class="mb-12 scroll-mt-20 pb-12 border-b border-gray-800">
+  <div class="flex items-center gap-3 mb-4">
+    <span class="method method-get">GET</span>
+    <code class="text-lg text-white font-mono">/agents/{agent_id}/transactions</code>
+  </div>
+  <p class="text-gray-400 mb-6">List all transactions for an agent (newest first).</p>
+
+  <div class="bg-gray-900 border border-gray-800 rounded-lg overflow-hidden">
+    <div class="flex items-center justify-between px-4 py-2 border-b border-gray-800 bg-gray-950/50">
+      <span class="text-xs text-gray-500 font-mono">cURL</span>
+      <button class="copy-btn text-xs text-gray-400 hover:text-white" onclick="copyCode(this)">📋 Copy</button>
+    </div>
+    <pre class="code-scroll p-4 text-sm font-mono text-gray-300"><code>curl https://web-production-32de5.up.railway.app/agents/a1b2c3d4e5f6/transactions \
+  -H "Authorization: Bearer ap_xxxxx"</code></pre>
+  </div>
+</section>
+
+<!-- ════════ SUBSCRIPTIONS (collapsed for brevity) ════════ -->
+<section id="create-sub" class="mb-12 scroll-mt-20 pb-12 border-b border-gray-800">
+  <div class="flex items-center gap-3 mb-4">
+    <span class="method method-post">POST</span>
+    <code class="text-lg text-white font-mono">/agents/{agent_id}/subscriptions/create</code>
+  </div>
+  <p class="text-gray-400 mb-6">Create a recurring subscription. Intervals: <code>daily</code>, <code>weekly</code>, <code>monthly</code>, <code>yearly</code>.</p>
+  <div class="bg-gray-900 border border-gray-800 rounded-lg overflow-hidden">
+    <pre class="code-scroll p-4 text-sm font-mono text-gray-300"><code>curl -X POST https://web-production-32de5.up.railway.app/agents/a1b2c3d4e5f6/subscriptions/create \
+  -H "Authorization: Bearer ap_xxxxx" \
+  -H "Content-Type: application/json" \
+  -d '{"name": "Pro Plan", "amount": 2900, "interval": "monthly"}'</code></pre>
+  </div>
+</section>
+
+<section id="list-subs" class="mb-12 scroll-mt-20 pb-12 border-b border-gray-800">
+  <div class="flex items-center gap-3 mb-4">
+    <span class="method method-get">GET</span>
+    <code class="text-lg text-white font-mono">/agents/{agent_id}/subscriptions</code>
+  </div>
+  <p class="text-gray-400 mb-6">List all subscriptions for an agent.</p>
+</section>
+
+<section id="cancel-sub" class="mb-12 scroll-mt-20 pb-12 border-b border-gray-800">
+  <div class="flex items-center gap-3 mb-4">
+    <span class="method method-post">POST</span>
+    <code class="text-lg text-white font-mono">/agents/{agent_id}/subscriptions/{sub_id}/cancel</code>
+  </div>
+  <p class="text-gray-400 mb-6">Cancel an active subscription (soft delete).</p>
+</section>
+
+<!-- ════════ STRIPE ════════ -->
+<section id="stripe-checkout" class="mb-12 scroll-mt-20 pb-12 border-b border-gray-800">
+  <div class="flex items-center gap-3 mb-4">
+    <span class="method method-post">POST</span>
+    <code class="text-lg text-white font-mono">/agents/{agent_id}/stripe/checkout</code>
+  </div>
+  <p class="text-gray-400 mb-6">Create a Stripe Checkout session. Returns a <code>checkout_url</code>.</p>
+</section>
+
+<section id="stripe-webhook" class="mb-12 scroll-mt-20 pb-12 border-b border-gray-800">
+  <div class="flex items-center gap-3 mb-4">
+    <span class="method method-post">POST</span>
+    <code class="text-lg text-white font-mono">/stripe/webhook</code>
+  </div>
+  <p class="text-gray-400 mb-6">Stripe webhook handler. Verifies signature with <code>STRIPE_WEBHOOK_SECRET</code>.</p>
+</section>
+
+<section id="stripe-config" class="mb-12 scroll-mt-20 pb-12 border-b border-gray-800">
+  <div class="flex items-center gap-3 mb-4">
+    <span class="method method-get">GET</span>
+    <code class="text-lg text-white font-mono">/stripe/config</code>
+  </div>
+  <p class="text-gray-400 mb-6">Returns the Stripe publishable key for frontend integration.</p>
+</section>
+
+<!-- ════════ ADMIN ════════ -->
+<section id="admin-stats" class="mb-12 scroll-mt-20 pb-12 border-b border-gray-800">
+  <div class="flex items-center gap-3 mb-4">
+    <span class="method method-get">GET</span>
+    <code class="text-lg text-white font-mono">/admin/stats</code>
+  </div>
+  <p class="text-gray-400 mb-6">Platform statistics. Requires <code>ADMIN_API_KEY</code>.</p>
+  <div class="bg-gray-900 border border-gray-800 rounded-lg overflow-hidden">
+    <pre class="code-scroll p-4 text-sm font-mono text-gray-300"><code>curl https://web-production-32de5.up.railway.app/admin/stats \
+  -H "Authorization: Bearer your_admin_key"</code></pre>
+  </div>
+</section>
+
+<section id="admin-agents" class="mb-12 scroll-mt-20 pb-12 border-b border-gray-800">
+  <div class="flex items-center gap-3 mb-4">
+    <span class="method method-get">GET</span>
+    <code class="text-lg text-white font-mono">/admin/agents</code>
+  </div>
+  <p class="text-gray-400 mb-6">List all agents (admin).</p>
+</section>
+
+<section id="admin-delete" class="mb-12 scroll-mt-20 pb-12 border-b border-gray-800">
+  <div class="flex items-center gap-3 mb-4">
+    <span class="method method-delete">DELETE</span>
+    <code class="text-lg text-white font-mono">/admin/agents/{agent_id}</code>
+  </div>
+  <p class="text-gray-400 mb-6">Delete an agent and all associated data (admin).</p>
+</section>
+
+<section id="admin-balance" class="mb-12 scroll-mt-20 pb-12 border-b border-gray-800">
+  <div class="flex items-center gap-3 mb-4">
+    <span class="method method-post">POST</span>
+    <code class="text-lg text-white font-mono">/admin/agents/{agent_id}/balance</code>
+  </div>
+  <p class="text-gray-400 mb-6">Set an agent's balance directly (admin). Useful for migrations and corrections.</p>
+</section>
+
+<section id="admin-audit" class="mb-12 scroll-mt-20 pb-12 border-b border-gray-800">
+  <div class="flex items-center gap-3 mb-4">
+    <span class="method method-get">GET</span>
+    <code class="text-lg text-white font-mono">/admin/audit</code>
+  </div>
+  <p class="text-gray-400 mb-6">Retrieve audit log entries. Query params: <code>limit</code>, <code>agent_id</code>, <code>action</code>.</p>
+</section>
+
+<section id="admin-billing" class="mb-12 scroll-mt-20 pb-12 border-b border-gray-800">
+  <div class="flex items-center gap-3 mb-4">
+    <span class="method method-post">POST</span>
+    <code class="text-lg text-white font-mono">/admin/run-billing</code>
+  </div>
+  <p class="text-gray-400 mb-6">Manually trigger billing for due subscriptions (admin).</p>
+</section>
+
+<!-- ════════ HEALTH ════════ -->
+<section id="health" class="mb-12 scroll-mt-20">
+  <div class="flex items-center gap-3 mb-4">
+    <span class="method method-get">GET</span>
+    <code class="text-lg text-white font-mono">/health</code>
+  </div>
+  <p class="text-gray-400 mb-6">Health check endpoint. Returns <code>{"ok": true}</code> when the API is up.</p>
+</section>
+
+<!-- FOOTER -->
+<footer class="mt-20 pt-8 border-t border-gray-800 text-sm text-gray-500">
+  <div class="flex flex-col md:flex-row justify-between items-center gap-4">
+    <div>© 2026 AgentPay — Payment infrastructure for AI agents</div>
+    <div class="flex gap-4">
+      <a href="/" class="hover:text-white">Home</a>
+      <a href="https://github.com/7399795590/agentpay" class="hover:text-white">GitHub</a>
+      <a href="https://twitter.com/M10Crypt" class="hover:text-white">Twitter</a>
+    </div>
+  </div>
+</footer>
+
+  </main>
+</div>
+
+<script>
+// Copy code functionality
+function copyCode(btn) {
+  const pre = btn.closest('.rounded-lg').querySelector('pre');
+  const text = pre.innerText;
+  navigator.clipboard.writeText(text).then(() => {
+    const orig = btn.textContent;
+    btn.textContent = '✅ Copied!';
+    setTimeout(() => btn.textContent = orig, 1500);
+  });
+}
+
+// Sidebar toggle (mobile)
+document.getElementById('sidebar-toggle').addEventListener('click', () => {
+  const sidebar = document.getElementById('sidebar');
+  sidebar.classList.toggle('-translate-x-full');
+});
+
+// Highlight active nav item on scroll
+const sections = document.querySelectorAll('section[id]');
+const navItems = document.querySelectorAll('.nav-item');
+window.addEventListener('scroll', () => {
+  let current = '';
+  sections.forEach(s => {
+    if (window.scrollY >= s.offsetTop - 100) current = s.id;
+  });
+  navItems.forEach(item => {
+    item.classList.toggle('active', item.getAttribute('href') === '#' + current);
+  });
+});
+
+// Simple search (filters sidebar items)
+document.getElementById('search').addEventListener('input', (e) => {
+  const q = e.target.value.toLowerCase();
+  navItems.forEach(item => {
+    const text = item.textContent.toLowerCase();
+    item.style.display = text.includes(q) ? 'block' : 'none';
+  });
+});
+</script>
+
+</body>
+</html>
