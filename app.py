@@ -11,6 +11,7 @@ from logging_utils import setup_logging, generate_request_id
 import stripe_integration
 from security import safe_compare, get_allowed_origins, apply_security_headers
 import auth
+import csrf
 
 app = Flask(__name__)
 
@@ -360,6 +361,7 @@ def redoc_ui():
 # ===== User-owned agents =====
 
 @app.route("/me/agents", methods=["POST"])
+@csrf.require_csrf
 @auth.require_user
 @limit(key_ip, "create")
 def me_create_agent():
@@ -417,6 +419,7 @@ def me_list_agents():
 
 
 @app.route("/agents/<agent_id>/claim", methods=["POST"])
+@csrf.require_csrf
 @auth.require_user
 @limit(key_ip, "topup")
 def claim_agent(agent_id):
@@ -584,8 +587,10 @@ def auth_login():
     )
     db.session.commit()
 
+    csrf_token = csrf.generate_csrf_token()
     resp = success({"user": user.to_dict()})
     auth.set_session_cookie(resp, session)
+    csrf.set_csrf_cookie(resp, csrf_token)
     return resp
 
 
@@ -605,6 +610,7 @@ def auth_logout():
         db.session.commit()
     resp = success({"message": "Logged out"})
     auth.clear_session_cookie(resp)
+    csrf.clear_csrf_cookie(resp)
     return resp
 
 
@@ -639,6 +645,7 @@ def auth_logout_all():
 
 
 @app.route("/auth/change-password", methods=["POST"])
+@csrf.require_csrf
 @auth.require_user
 def auth_change_password():
     """Change the current user's password.
@@ -693,6 +700,7 @@ def auth_change_password():
 
 
 @app.route("/auth/change-email", methods=["POST"])
+@csrf.require_csrf
 @auth.require_user
 def auth_change_email():
     """Change the current user's email.
@@ -778,6 +786,185 @@ def auth_list_sessions():
         ],
         "count": len(sessions),
     })
+
+
+
+# ===== Admin: User Management =====
+
+def _count_active_admins(exclude_user_id=None):
+    """Count active users with role=admin. Optionally exclude a user."""
+    q = User.query.filter_by(role="admin", is_active=True)
+    if exclude_user_id:
+        q = q.filter(User.id != exclude_user_id)
+    return q.count()
+
+
+@app.route("/admin/users")
+@auth.require_role("admin")
+@limit(key_ip, "transactions")
+def admin_list_users():
+    """List all users (admin only)."""
+    q = request.args.get("q", "").strip()
+    try:
+        limit_n = min(int(request.args.get("limit", 100)), 500)
+    except ValueError:
+        return error("Invalid limit")
+
+    query = User.query
+    if q:
+        query = query.filter(User.email.like(f"%{q}%"))
+
+    users = query.order_by(User.created_at.desc()).limit(limit_n).all()
+    return success({
+        "users": [u.to_dict() for u in users],
+        "count": len(users),
+    })
+
+
+@app.route("/admin/users/<user_id>")
+@auth.require_role("admin")
+@limit(key_ip, "transactions")
+def admin_get_user(user_id):
+    """Get a specific user's details."""
+    user = db.session.get(User, user_id)
+    if not user:
+        return error("User not found", 404)
+
+    agent_count = Agent.query.filter_by(owner_id=user.id).count()
+
+    data = user.to_dict()
+    data["agent_count"] = agent_count
+    return success({"user": data})
+
+
+@app.route("/admin/users/<user_id>/promote", methods=["POST"])
+@csrf.require_csrf
+@auth.require_role("admin")
+@limit(key_ip, "topup")
+def admin_promote_user(user_id):
+    """Promote a user to admin role."""
+    current = request.current_user
+    target = db.session.get(User, user_id)
+    if not target:
+        return error("User not found", 404)
+
+    if target.role == "admin":
+        return success({"user": target.to_dict(), "message": "Already admin"})
+
+    target.role = "admin"
+    write_audit(
+        "admin.user.promote",
+        user_id=current.id,
+        actor=current.email,
+        ip=request.remote_addr,
+        user_agent=request.headers.get("User-Agent", "")[:200],
+        target_user_id=target.id,
+        target_email=target.email,
+    )
+    db.session.commit()
+    return success({"user": target.to_dict()})
+
+
+@app.route("/admin/users/<user_id>/demote", methods=["POST"])
+@csrf.require_csrf
+@auth.require_role("admin")
+@limit(key_ip, "topup")
+def admin_demote_user(user_id):
+    """Demote an admin to developer. Protects the last admin."""
+    current = request.current_user
+    target = db.session.get(User, user_id)
+    if not target:
+        return error("User not found", 404)
+
+    if target.id == current.id:
+        return error("Cannot demote yourself", 403)
+
+    if target.role != "admin":
+        return success({"user": target.to_dict(), "message": "Not an admin"})
+
+    if _count_active_admins(exclude_user_id=target.id) == 0:
+        return error("Cannot demote the last active admin", 403)
+
+    target.role = "developer"
+    write_audit(
+        "admin.user.demote",
+        user_id=current.id,
+        actor=current.email,
+        ip=request.remote_addr,
+        user_agent=request.headers.get("User-Agent", "")[:200],
+        target_user_id=target.id,
+        target_email=target.email,
+    )
+    db.session.commit()
+    return success({"user": target.to_dict()})
+
+
+@app.route("/admin/users/<user_id>/disable", methods=["POST"])
+@csrf.require_csrf
+@auth.require_role("admin")
+@limit(key_ip, "topup")
+def admin_disable_user(user_id):
+    """Disable a user and revoke all their sessions. Protects last admin."""
+    current = request.current_user
+    target = db.session.get(User, user_id)
+    if not target:
+        return error("User not found", 404)
+
+    if target.id == current.id:
+        return error("Cannot disable yourself", 403)
+
+    if not target.is_active:
+        return success({"user": target.to_dict(), "message": "Already disabled"})
+
+    if target.role == "admin" and _count_active_admins(exclude_user_id=target.id) == 0:
+        return error("Cannot disable the last active admin", 403)
+
+    target.is_active = False
+    auth.revoke_all_user_sessions(target.id)
+
+    write_audit(
+        "admin.user.disable",
+        user_id=current.id,
+        actor=current.email,
+        ip=request.remote_addr,
+        user_agent=request.headers.get("User-Agent", "")[:200],
+        target_user_id=target.id,
+        target_email=target.email,
+        sessions_revoked=True,
+    )
+    db.session.commit()
+    return success({"user": target.to_dict(), "sessions_revoked": True})
+
+
+@app.route("/admin/users/<user_id>/enable", methods=["POST"])
+@csrf.require_csrf
+@auth.require_role("admin")
+@limit(key_ip, "topup")
+def admin_enable_user(user_id):
+    """Re-enable a disabled user account."""
+    current = request.current_user
+    target = db.session.get(User, user_id)
+    if not target:
+        return error("User not found", 404)
+
+    if target.is_active:
+        return success({"user": target.to_dict(), "message": "Already active"})
+
+    target.is_active = True
+    target.failed_logins = 0
+    target.locked_until = None
+
+    write_audit(
+        "admin.user.enable",
+        user_id=current.id,
+        actor=current.email,
+        ip=request.remote_addr,
+        user_agent=request.headers.get("User-Agent", "")[:200],
+        target_user_id=target.id,
+        target_email=target.email,
+    )
+    db.session.commit()
+    return success({"user": target.to_dict()})
 
 
 # ===== Admin API =====

@@ -5,7 +5,7 @@ It:
 - Forces TESTING=1
 - Removes DATABASE_URL so tests use SQLite in-memory
 - Sets AUTO_CREATE_TABLES=1 to create schema on the fly
-- Provides a shared client fixture
+- Provides client + csrf_client + app_ctx fixtures
 """
 import os
 import sys
@@ -21,36 +21,48 @@ os.environ["FLASK_DEBUG"] = "0"
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 import pytest
-from app import app as flask_app
+from app import app as _flask_app
 from database import db
 
 
 @pytest.fixture(scope="session", autouse=True)
 def _setup_testing_environment():
     """Configure app for testing once per session."""
-    flask_app.config["TESTING"] = True
-    flask_app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
-    flask_app.config["SQLALCHEMY_ENGINE_OPTIONS"] = {}
-    with flask_app.app_context():
+    _flask_app.config["TESTING"] = True
+    _flask_app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
+    _flask_app.config["SQLALCHEMY_ENGINE_OPTIONS"] = {}
+    with _flask_app.app_context():
         db.drop_all()
         db.create_all()
     yield
-    with flask_app.app_context():
+    with _flask_app.app_context():
         db.session.remove()
         db.drop_all()
+
+
+@pytest.fixture(scope="session")
+def flask_app():
+    """Return the Flask app instance."""
+    return _flask_app
 
 
 @pytest.fixture
 def client():
     """Return a test client."""
-    return flask_app.test_client()
+    return _flask_app.test_client()
 
 
 @pytest.fixture(autouse=True)
 def _clean_db():
     """Wipe all data before each test (keep schema)."""
-    with flask_app.app_context():
+    with _flask_app.app_context():
         for table in reversed(db.metadata.sorted_tables):
             db.session.execute(table.delete())
         db.session.commit()
     yield
+
+
+@pytest.fixture
+def app_ctx():
+    """Provide the Flask app for request context tests."""
+    return _flask_app
