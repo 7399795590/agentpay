@@ -17,21 +17,6 @@ case "$PORT" in
     ;;
 esac
 
-# Ensure FLASK_APP is set for flask CLI
-export FLASK_APP=app.py
-
-# Apply database migrations (idempotent — safe to run every deploy)
-if [ -n "$DATABASE_URL" ]; then
-  echo "→ Running database migrations..."
-  if ! flask db upgrade; then
-    echo "⚠️  Migration failed — aborting startup to prevent schema drift"
-    exit 1
-  fi
-  echo "→ Migrations OK"
-else
-  echo "⚠️  DATABASE_URL not set — skipping migrations"
-fi
-
 echo "Starting AgentPay on port $PORT"
 
 exec gunicorn app:app \

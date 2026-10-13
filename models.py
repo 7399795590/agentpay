@@ -30,7 +30,6 @@ class Agent(db.Model):
     currency = db.Column(db.String(3), default="USD")  # USD, EUR, GBP
     webhook_url = db.Column(db.String(500), nullable=True)
     created_at = db.Column(db.Integer, default=lambda: int(time.time()))
-    updated_at = db.Column(db.Integer, default=lambda: int(time.time()), onupdate=lambda: int(time.time()))
 
     transactions = db.relationship("Transaction", backref="agent", lazy=True)
 
@@ -52,7 +51,7 @@ class Transaction(db.Model):
 
     id = db.Column(db.Integer, primary_key=True, autoincrement=True)
     agent_id = db.Column(db.String(32), db.ForeignKey("agents.id"), nullable=False)
-    type = db.Column(db.String(30), nullable=False, index=True)  # topup/charge/refund/admin_adjust/...
+    type = db.Column(db.String(10), nullable=False)  # "topup" or "charge"
     amount = db.Column(db.Integer, nullable=False)  # in cents
     description = db.Column(db.String(200), default="")
     status = db.Column(db.String(20), default="completed")  # completed, failed
@@ -108,7 +107,7 @@ class AuditLog(db.Model):
 
     id = db.Column(db.Integer, primary_key=True, autoincrement=True)
     timestamp = db.Column(db.Integer, default=lambda: int(time.time()), index=True)
-    action = db.Column(db.String(80), nullable=False, index=True)
+    action = db.Column(db.String(50), nullable=False, index=True)
     agent_id = db.Column(db.String(32), nullable=True, index=True)
     actor = db.Column(db.String(100), nullable=True)  # API key prefix or "admin"
     ip = db.Column(db.String(45), nullable=True)
