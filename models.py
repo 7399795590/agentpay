@@ -221,6 +221,8 @@ class AuditLog(db.Model):
     user_agent = db.Column(db.String(200), nullable=True)
     metadata_json = db.Column(db.Text, nullable=True)  # JSON blob
     status = db.Column(db.String(20), default="ok")  # ok, error
+    prev_hash = db.Column(db.String(64), nullable=True, index=True)  # SHA-256 of previous record
+    record_hash = db.Column(db.String(64), nullable=True, index=True)  # SHA-256 of this record
 
     def to_dict(self):
         import json
@@ -241,21 +243,68 @@ class AuditLog(db.Model):
             "user_agent": self.user_agent,
             "status": self.status,
             "metadata": meta,
+            "prev_hash": self.prev_hash,
+            "record_hash": self.record_hash,
         }
 
 
+# Sensitive fields that must NEVER be stored in audit metadata
+_AUDIT_SENSITIVE_KEYS = {
+    "password", "password_hash", "new_password", "current_password",
+    "totp_secret", "recovery_codes", "recovery_codes_hash",
+    "api_key", "session_id", "token", "csrf_token",
+    "secret", "stripe_secret", "stripe_webhook_secret",
+    "authorization", "cookie", "set-cookie",
+}
+
+
+def _is_audit_sensitive(key):
+    if not isinstance(key, str):
+        return False
+    k = key.lower().strip()
+    if k in _AUDIT_SENSITIVE_KEYS:
+        return True
+    for marker in ("password", "secret", "token", "api_key", "csrf"):
+        if marker in k:
+            return True
+    return False
+
+
+def sanitize_metadata(obj, _depth=0):
+    """Recursively sanitize metadata before audit storage."""
+    if _depth > 5:
+        return "[truncated]"
+    if isinstance(obj, dict):
+        return {
+            k: ("[REDACTED]" if _is_audit_sensitive(k) else sanitize_metadata(v, _depth + 1))
+            for k, v in obj.items()
+        }
+    if isinstance(obj, list):
+        return [sanitize_metadata(x, _depth + 1) for x in obj[:50]]
+    if isinstance(obj, (str, int, float, bool)) or obj is None:
+        if isinstance(obj, str) and len(obj) > 500:
+            return obj[:500] + "...[truncated]"
+        return obj
+    return str(obj)[:200]
+
+
 def write_audit(action, agent_id=None, user_id=None, actor=None, ip=None, user_agent=None, status="ok", **metadata):
-    """Helper to write an audit log entry."""
+    """LEGACY: write an audit log entry without hash chain.
+
+    Deprecated — use audit.write_audit_secure() for hash-chained entries.
+    Kept for backward compatibility during migration.
+    """
     import json
+    clean = sanitize_metadata(metadata) if metadata else None
     entry = AuditLog(
         action=action,
         agent_id=agent_id,
         user_id=user_id,
         actor=actor,
         ip=ip,
-        user_agent=user_agent,
+        user_agent=(user_agent or "")[:200] or None,
         status=status,
-        metadata_json=json.dumps(metadata) if metadata else None,
+        metadata_json=json.dumps(clean, sort_keys=True) if clean else None,
     )
     db.session.add(entry)
     # Note: does NOT commit — caller commits with their transaction

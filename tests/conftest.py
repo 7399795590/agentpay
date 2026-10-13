@@ -16,6 +16,8 @@ os.environ.pop("DATABASE_URL", None)
 os.environ["TESTING"] = "1"
 os.environ["AUTO_CREATE_TABLES"] = "1"
 os.environ["FLASK_DEBUG"] = "0"
+os.environ["ADMIN_API_KEY"] = "test_admin_key_for_ci_only"
+os.environ["WEBHOOK_SECRET"] = "test_webhook_secret"
 
 # Ensure project root is on path
 sys.path.insert(0, str(Path(__file__).parent.parent))

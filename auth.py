@@ -12,7 +12,7 @@ from flask import request, jsonify, current_app
 from werkzeug.security import generate_password_hash, check_password_hash
 
 from database import db
-from models import User, Session, USER_ROLES, write_audit
+from models import User, Session, USER_ROLES
 
 
 # ===== Config =====

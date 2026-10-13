@@ -12,6 +12,7 @@ import stripe_integration
 from security import safe_compare, get_allowed_origins, apply_security_headers
 import auth
 import csrf
+import audit
 
 app = Flask(__name__)
 
@@ -140,35 +141,65 @@ def key_ip(request, **kwargs):
 
 
 def require_admin(view_func):
-    """Decorator: requires ADMIN_API_KEY in Authorization header."""
+    """Decorator: require admin access.
+
+    Two accepted methods:
+    1. Session cookie of an authenticated user with role='admin' (preferred)
+    2. Authorization: Bearer <ADMIN_API_KEY>  (emergency only)
+
+    Attaches request.current_admin = True for audit context.
+    """
     from functools import wraps
     import os
+
     @wraps(view_func)
     def wrapper(*args, **kwargs):
+        # Method 1: session-based admin
+        try:
+            session = auth.get_session_from_request()
+            if session:
+                user = db.session.get(User, session.user_id)
+                if user and user.is_active and user.role == "admin":
+                    request.current_user = user
+                    request.current_session = session
+                    request.current_admin = True
+                    return view_func(*args, **kwargs)
+        except Exception:
+            pass
+
+        # Method 2: ADMIN_API_KEY (emergency)
         admin_key = os.environ.get("ADMIN_API_KEY", "")
+        auth_header = request.headers.get("Authorization", "")
+
+        if auth_header.startswith("Bearer "):
+            token = auth_header[7:].strip()
+            if admin_key and safe_compare(token, admin_key):
+                request.current_admin = True
+                request.current_user = None
+                return view_func(*args, **kwargs)
+
+        # Failure — log it
         if not admin_key:
             return error("Admin API is disabled (ADMIN_API_KEY not set)", 503)
-        auth = request.headers.get("Authorization", "")
-        if not auth.startswith("Bearer "):
-            return error("Missing Authorization (use: Bearer <ADMIN_API_KEY>)", 401)
-        token = auth[7:].strip()
-        if not safe_compare(token, admin_key):
-            # Log failed admin attempts (security signal)
-            try:
-                from models import write_audit
-                write_audit(
-                    "admin.auth.fail",
-                    actor="unknown",
-                    ip=request.remote_addr,
-                    user_agent=request.headers.get("User-Agent", "")[:200],
-                    status="error",
-                    path=request.path,
-                )
-                db.session.commit()
-            except Exception:
-                db.session.rollback()
-            return error("Invalid admin key", 403)
-        return view_func(*args, **kwargs)
+
+        try:
+            from models import write_audit
+            write_audit(
+                "admin.auth.fail",
+                actor="unknown",
+                ip=request.remote_addr,
+                user_agent=request.headers.get("User-Agent", "")[:200],
+                status="error",
+                path=request.path,
+            )
+            db.session.commit()
+        except Exception:
+            db.session.rollback()
+
+        if not auth_header:
+            return error("Authentication required", 401)
+        return error("Invalid admin credentials", 403)
+
     return wrapper
 
 
@@ -203,7 +234,7 @@ def create_agent():
     owner = auth.attach_owner_if_logged_in(agent)
     db.session.add(agent)
     db.session.flush()
-    write_audit("agent.create", agent_id=agent.id,
+    audit.write_audit_secure("agent.create", agent_id=agent.id,
                 user_id=owner.id if owner else None,
                 actor=owner.email if owner else "anonymous",
                 ip=request.remote_addr,
@@ -245,7 +276,7 @@ def topup(agent_id):
                      description=data.get("description", "Top-up"))
     db.session.add(tx)
     db.session.flush()
-    write_audit("topup", agent_id=agent.id, ip=request.remote_addr,
+    audit.write_audit_secure("topup", agent_id=agent.id, ip=request.remote_addr,
                 user_agent=request.headers.get("User-Agent", "")[:200],
                 actor=agent.api_key[:10] + "...",
                 amount=amount, tx_id=tx.id, description=tx.description)
@@ -272,7 +303,7 @@ def charge(agent_id):
                      description=data.get("description", "Charge"))
     db.session.add(tx)
     db.session.flush()
-    write_audit("charge", agent_id=agent.id, ip=request.remote_addr,
+    audit.write_audit_secure("charge", agent_id=agent.id, ip=request.remote_addr,
                 user_agent=request.headers.get("User-Agent", "")[:200],
                 actor=agent.api_key[:10] + "...",
                 amount=amount, tx_id=tx.id, description=tx.description)
@@ -392,7 +423,7 @@ def me_create_agent():
     )
     db.session.add(agent)
     db.session.flush()
-    write_audit(
+    audit.write_audit_secure(
         "agent.create.owned",
         agent_id=agent.id,
         user_id=user.id,
@@ -438,7 +469,7 @@ def claim_agent(agent_id):
     password = data.get("password") or ""
 
     if not auth.verify_password(password, user.password_hash):
-        write_audit(
+        audit.write_audit_secure(
             "agent.claim.fail",
             agent_id=agent_id,
             user_id=user.id,
@@ -462,7 +493,7 @@ def claim_agent(agent_id):
 
     # Attach to current user
     agent.owner_id = user.id
-    write_audit(
+    audit.write_audit_secure(
         "agent.claim.success",
         agent_id=agent.id,
         user_id=user.id,
@@ -515,7 +546,7 @@ def auth_register():
     db.session.flush()
 
     # Audit
-    write_audit(
+    audit.write_audit_secure(
         "auth.register",
         user_id=user.id,
         actor=email,
@@ -558,7 +589,7 @@ def auth_login():
 
     if not auth.verify_password(password, user.password_hash):
         auth.record_failed_login(user)
-        write_audit(
+        audit.write_audit_secure(
             "auth.login.fail",
             user_id=user.id,
             actor=email,
@@ -577,7 +608,7 @@ def auth_login():
     )
     auth.reset_failed_logins(user)
 
-    write_audit(
+    audit.write_audit_secure(
         "auth.login.success",
         user_id=user.id,
         actor=email,
@@ -601,7 +632,7 @@ def auth_logout():
     if session:
         user_id = session.user_id
         auth.revoke_session(session)
-        write_audit(
+        audit.write_audit_secure(
             "auth.logout",
             user_id=user_id,
             ip=request.remote_addr,
@@ -633,7 +664,7 @@ def auth_logout_all():
     user = request.current_user
     current = request.current_session
     auth.revoke_all_user_sessions(user.id, except_session_id=current.id)
-    write_audit(
+    audit.write_audit_secure(
         "auth.logout_all",
         user_id=user.id,
         ip=request.remote_addr,
@@ -661,7 +692,7 @@ def auth_change_password():
     new_password = data.get("new_password") or ""
 
     if not auth.verify_password(current_password, user.password_hash):
-        write_audit(
+        audit.write_audit_secure(
             "auth.change_password.fail",
             user_id=user.id,
             actor=user.email,
@@ -684,7 +715,7 @@ def auth_change_password():
     # Revoke all other sessions (security best practice)
     auth.revoke_all_user_sessions(user.id, except_session_id=current_session.id)
 
-    write_audit(
+    audit.write_audit_secure(
         "auth.change_password.success",
         user_id=user.id,
         actor=user.email,
@@ -716,7 +747,7 @@ def auth_change_email():
     password = data.get("password") or ""
 
     if not auth.verify_password(password, user.password_hash):
-        write_audit(
+        audit.write_audit_secure(
             "auth.change_email.fail",
             user_id=user.id,
             actor=user.email,
@@ -744,7 +775,7 @@ def auth_change_email():
 
     auth.revoke_all_user_sessions(user.id, except_session_id=current_session.id)
 
-    write_audit(
+    audit.write_audit_secure(
         "auth.change_email.success",
         user_id=user.id,
         actor=old_email,
@@ -852,7 +883,7 @@ def admin_promote_user(user_id):
         return success({"user": target.to_dict(), "message": "Already admin"})
 
     target.role = "admin"
-    write_audit(
+    audit.write_audit_secure(
         "admin.user.promote",
         user_id=current.id,
         actor=current.email,
@@ -886,7 +917,7 @@ def admin_demote_user(user_id):
         return error("Cannot demote the last active admin", 403)
 
     target.role = "developer"
-    write_audit(
+    audit.write_audit_secure(
         "admin.user.demote",
         user_id=current.id,
         actor=current.email,
@@ -922,7 +953,7 @@ def admin_disable_user(user_id):
     target.is_active = False
     auth.revoke_all_user_sessions(target.id)
 
-    write_audit(
+    audit.write_audit_secure(
         "admin.user.disable",
         user_id=current.id,
         actor=current.email,
@@ -954,7 +985,7 @@ def admin_enable_user(user_id):
     target.failed_logins = 0
     target.locked_until = None
 
-    write_audit(
+    audit.write_audit_secure(
         "admin.user.enable",
         user_id=current.id,
         actor=current.email,
@@ -1020,7 +1051,7 @@ def admin_delete_agent(agent_id):
     Subscription.query.filter_by(agent_id=agent.id).delete()
     Transaction.query.filter_by(agent_id=agent.id).delete()
     db.session.delete(agent)
-    write_audit("admin.agent.delete", agent_id=agent_id,
+    audit.write_audit_secure("admin.agent.delete", agent_id=agent_id,
                 ip=request.remote_addr,
                 actor="admin")
     db.session.commit()
@@ -1049,7 +1080,7 @@ def admin_set_balance(agent_id):
     )
     db.session.add(tx)
     db.session.flush()
-    write_audit("admin.balance.set", agent_id=agent.id,
+    audit.write_audit_secure("admin.balance.set", agent_id=agent.id,
                 ip=request.remote_addr, actor="admin",
                 old_balance=old_balance, new_balance=new_balance,
                 tx_id=tx.id)
@@ -1063,20 +1094,117 @@ def admin_set_balance(agent_id):
 @require_admin
 @limit(key_ip, "transactions")
 def list_audit():
-    """List recent audit log entries. Admin-only in production."""
+    """List audit log entries (admin only).
+
+    Pagination: limit (max 200), offset.
+    Filters: action, user_id, agent_id, status, since, until.
+    Logs this read as 'audit.read' (with hash chain).
+    """
     try:
-        limit_n = min(int(request.args.get("limit", 50)), 500)
+        limit_n = min(int(request.args.get("limit", 50)), 200)
     except ValueError:
-        return error("Invalid limit")
+        return error("Invalid limit (must be int)")
+    try:
+        offset = max(int(request.args.get("offset", 0)), 0)
+    except ValueError:
+        return error("Invalid offset (must be int)")
+
     action = request.args.get("action")
+    user_id = request.args.get("user_id")
     agent_id = request.args.get("agent_id")
+    status_f = request.args.get("status")
+    since = request.args.get("since")
+    until = request.args.get("until")
+
     q = AuditLog.query
     if action:
-        q = q.filter_by(action=action)
+        q = q.filter_by(action=action[:80])
+    if user_id:
+        q = q.filter_by(user_id=user_id[:32])
     if agent_id:
-        q = q.filter_by(agent_id=agent_id)
-    entries = q.order_by(AuditLog.id.desc()).limit(limit_n).all()
-    return success({"entries": [e.to_dict() for e in entries], "count": len(entries)})
+        q = q.filter_by(agent_id=agent_id[:32])
+    if status_f:
+        if status_f not in ("ok", "error"):
+            return error("status must be 'ok' or 'error'")
+        q = q.filter_by(status=status_f)
+    if since:
+        try:
+            q = q.filter(AuditLog.timestamp >= int(since))
+        except ValueError:
+            return error("Invalid since (must be unix timestamp)")
+    if until:
+        try:
+            q = q.filter(AuditLog.timestamp <= int(until))
+        except ValueError:
+            return error("Invalid until (must be unix timestamp)")
+
+    total = q.count()
+    entries = q.order_by(AuditLog.id.desc()).offset(offset).limit(limit_n).all()
+
+    # Log the read itself (post-query, so no infinite recursion)
+    try:
+        audit.write_audit_secure(
+            "audit.read",
+            actor="admin",
+            ip=request.remote_addr,
+            user_agent=request.headers.get("User-Agent", "")[:200],
+            filters={
+                "action": action, "user_id": user_id,
+                "agent_id": agent_id, "status": status_f,
+                "since": since, "until": until,
+            },
+            returned=len(entries),
+        )
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+
+    return success({
+        "entries": [e.to_dict() for e in entries],
+        "count": len(entries),
+        "total": total,
+        "limit": limit_n,
+        "offset": offset,
+    })
+
+
+@app.route("/admin/audit/verify")
+@require_admin
+@limit(key_ip, "transactions")
+def admin_audit_verify():
+    """Verify the integrity of the audit hash chain."""
+    try:
+        start_id = request.args.get("start_id")
+        start_id = int(start_id) if start_id else None
+        limit_n = min(int(request.args.get("limit", 10000)), 50000)
+    except ValueError:
+        return error("Invalid parameters")
+
+    result = audit.verify_audit_chain(start_id=start_id, limit=limit_n)
+    result["legacy_entries_skipped"] = AuditLog.query.filter(AuditLog.record_hash.is_(None)).count()
+
+    try:
+        audit.write_audit_secure(
+            "audit.verify",
+            actor="admin",
+            ip=request.remote_addr,
+            user_agent=request.headers.get("User-Agent", "")[:200],
+            result_ok=result["ok"],
+            checked=result["checked"],
+        )
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+
+    return success(result)
+
+
+@app.route("/admin/audit/checkpoint")
+@require_admin
+@limit(key_ip, "transactions")
+def admin_audit_checkpoint():
+    """Return a compact checkpoint of the audit chain (store off-site)."""
+    return success(audit.get_chain_checkpoint())
 
 
 # ===== Refunds =====
@@ -1119,7 +1247,7 @@ def refund_transaction(agent_id):
     )
     db.session.add(refund)
     db.session.flush()  # get refund.id without committing
-    write_audit("refund", agent_id=agent.id, ip=request.remote_addr,
+    audit.write_audit_secure("refund", agent_id=agent.id, ip=request.remote_addr,
                 user_agent=request.headers.get("User-Agent", "")[:200],
                 metadata={"refund_tx_id": refund.id, "original_tx_id": original.id,
                           "amount": original.amount, "reason": reason})
@@ -1166,7 +1294,7 @@ def create_subscription(agent_id):
     )
     db.session.add(sub)
     db.session.flush()  # get sub.id without committing
-    write_audit("subscription.create", agent_id=agent.id, ip=request.remote_addr,
+    audit.write_audit_secure("subscription.create", agent_id=agent.id, ip=request.remote_addr,
                 user_agent=request.headers.get("User-Agent", "")[:200],
                 metadata={"sub_id": sub.id, "name": name, "amount": amount,
                           "interval_seconds": interval_seconds})
@@ -1201,7 +1329,7 @@ def cancel_subscription(agent_id, sub_id):
         return success({"subscription": sub.to_dict(), "message": "Already cancelled"})
     sub.status = "cancelled"
     sub.cancelled_at = int(time.time())
-    write_audit("subscription.cancel", agent_id=agent.id, ip=request.remote_addr,
+    audit.write_audit_secure("subscription.cancel", agent_id=agent.id, ip=request.remote_addr,
                 user_agent=request.headers.get("User-Agent", "")[:200],
                 metadata={"sub_id": sub.id, "name": sub.name, "amount": sub.amount})
     db.session.commit()
@@ -1239,7 +1367,7 @@ def run_billing():
         sub.next_charge_at = now + sub.interval_seconds
         db.session.add(tx)
         db.session.flush()  # get tx.id without committing
-        write_audit("subscription.billing", agent_id=agent.id,
+        audit.write_audit_secure("subscription.billing", agent_id=agent.id,
                     metadata={"sub_id": sub.id, "name": sub.name,
                               "amount": sub.amount, "tx_id": tx.id})
         db.session.commit()
