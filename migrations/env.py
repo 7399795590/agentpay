@@ -5,6 +5,9 @@ from flask import current_app
 
 from alembic import context
 
+# Force-import models so Alembic autogenerate sees all tables
+import models  # noqa: F401
+
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
 config = context.config
