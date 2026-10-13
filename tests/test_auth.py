@@ -161,3 +161,182 @@ def test_user_dict_never_exposes_secrets(client):
     assert "password_hash" not in data
     assert "totp_secret" not in data
     assert "recovery_codes_hash" not in data
+
+
+# ===== Change Password =====
+
+def test_change_password_success(client):
+    """Changing password with correct current password works."""
+    _register(client, "cp@example.com", "oldpass123")
+    _login(client, "cp@example.com", "oldpass123")
+
+    r = client.post("/auth/change-password", json={
+        "current_password": "oldpass123",
+        "new_password": "newstrong456",
+    })
+    assert r.status_code == 200
+    assert "changed" in r.get_json()["message"].lower()
+
+    # Old password no longer works
+    client.post("/auth/logout")
+    r = _login(client, "cp@example.com", "oldpass123")
+    assert r.status_code == 401
+
+    # New password works
+    r = _login(client, "cp@example.com", "newstrong456")
+    assert r.status_code == 200
+
+
+def test_change_password_wrong_current(client):
+    _register(client, "cp2@example.com", "oldpass123")
+    _login(client, "cp2@example.com", "oldpass123")
+
+    r = client.post("/auth/change-password", json={
+        "current_password": "wrong",
+        "new_password": "newstrong456",
+    })
+    assert r.status_code == 401
+
+
+def test_change_password_too_short(client):
+    _register(client, "cp3@example.com", "oldpass123")
+    _login(client, "cp3@example.com", "oldpass123")
+
+    r = client.post("/auth/change-password", json={
+        "current_password": "oldpass123",
+        "new_password": "short",
+    })
+    assert r.status_code == 400
+
+
+def test_change_password_same_as_current(client):
+    _register(client, "cp4@example.com", "oldpass123")
+    _login(client, "cp4@example.com", "oldpass123")
+
+    r = client.post("/auth/change-password", json={
+        "current_password": "oldpass123",
+        "new_password": "oldpass123",
+    })
+    assert r.status_code == 400
+    assert "different" in r.get_json()["error"].lower()
+
+
+def test_change_password_requires_auth(client):
+    r = client.post("/auth/change-password", json={
+        "current_password": "x",
+        "new_password": "y" * 12,
+    })
+    assert r.status_code == 401
+
+
+# ===== Change Email =====
+
+def test_change_email_success(client):
+    _register(client, "ce@example.com", "strongpass123")
+    _login(client, "ce@example.com", "strongpass123")
+
+    r = client.post("/auth/change-email", json={
+        "new_email": "newce@example.com",
+        "password": "strongpass123",
+    })
+    assert r.status_code == 200
+    assert r.get_json()["user"]["email"] == "newce@example.com"
+
+
+def test_change_email_wrong_password(client):
+    _register(client, "ce2@example.com", "strongpass123")
+    _login(client, "ce2@example.com", "strongpass123")
+
+    r = client.post("/auth/change-email", json={
+        "new_email": "x@example.com",
+        "password": "wrong",
+    })
+    assert r.status_code == 401
+
+
+def test_change_email_invalid(client):
+    _register(client, "ce3@example.com", "strongpass123")
+    _login(client, "ce3@example.com", "strongpass123")
+
+    r = client.post("/auth/change-email", json={
+        "new_email": "not-an-email",
+        "password": "strongpass123",
+    })
+    assert r.status_code == 400
+
+
+def test_change_email_already_taken(client):
+    _register(client, "first@example.com", "strongpass123")
+    _register(client, "ce4@example.com", "strongpass123")
+    _login(client, "ce4@example.com", "strongpass123")
+
+    r = client.post("/auth/change-email", json={
+        "new_email": "first@example.com",
+        "password": "strongpass123",
+    })
+    assert r.status_code == 409
+
+
+def test_change_email_same_as_current(client):
+    _register(client, "ce5@example.com", "strongpass123")
+    _login(client, "ce5@example.com", "strongpass123")
+
+    r = client.post("/auth/change-email", json={
+        "new_email": "ce5@example.com",
+        "password": "strongpass123",
+    })
+    assert r.status_code == 400
+    assert "same" in r.get_json()["error"].lower()
+
+
+# ===== Sessions List =====
+
+def test_list_sessions_requires_auth(client):
+    r = client.get("/auth/sessions")
+    assert r.status_code == 401
+
+
+def test_list_sessions_returns_current(client):
+    _register(client, "sess@example.com", "strongpass123")
+    _login(client, "sess@example.com", "strongpass123")
+
+    r = client.get("/auth/sessions")
+    assert r.status_code == 200
+    data = r.get_json()
+    assert data["count"] == 1
+    assert data["sessions"][0]["is_current"] is True
+
+
+def test_list_sessions_multiple_devices(client):
+    _register(client, "multi2@example.com", "strongpass123")
+
+    c1 = client.application.test_client()
+    c2 = client.application.test_client()
+    _login(c1, "multi2@example.com", "strongpass123")
+    _login(c2, "multi2@example.com", "strongpass123")
+
+    r = c1.get("/auth/sessions")
+    assert r.status_code == 200
+    data = r.get_json()
+    assert data["count"] == 2
+    currents = [s for s in data["sessions"] if s["is_current"]]
+    assert len(currents) == 1
+
+
+def test_change_password_revokes_other_sessions(client):
+    _register(client, "revoke@example.com", "oldpass123")
+    c1 = client.application.test_client()
+    c2 = client.application.test_client()
+    _login(c1, "revoke@example.com", "oldpass123")
+    _login(c2, "revoke@example.com", "oldpass123")
+
+    # c1 changes password
+    r = c1.post("/auth/change-password", json={
+        "current_password": "oldpass123",
+        "new_password": "newpass456",
+    })
+    assert r.status_code == 200
+
+    # c1 still valid, c2 revoked
+    assert c1.get("/auth/me").status_code == 200
+    assert c2.get("/auth/me").status_code == 401

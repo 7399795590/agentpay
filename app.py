@@ -510,6 +510,149 @@ def auth_logout_all():
     return success({"message": "All other sessions revoked"})
 
 
+
+@app.route("/auth/change-password", methods=["POST"])
+@auth.require_user
+def auth_change_password():
+    """Change the current user's password.
+
+    Requires the current password as confirmation.
+    All other sessions are revoked (the current session stays).
+    """
+    user = request.current_user
+    current_session = request.current_session
+    data = request.get_json(silent=True) or {}
+
+    current_password = data.get("current_password") or ""
+    new_password = data.get("new_password") or ""
+
+    if not auth.verify_password(current_password, user.password_hash):
+        write_audit(
+            "auth.change_password.fail",
+            user_id=user.id,
+            actor=user.email,
+            ip=request.remote_addr,
+            user_agent=request.headers.get("User-Agent", "")[:200],
+            status="error",
+        )
+        db.session.commit()
+        return error("Current password is incorrect", 401)
+
+    ok, msg = auth.validate_password(new_password)
+    if not ok:
+        return error(msg)
+
+    if current_password == new_password:
+        return error("New password must be different from current password")
+
+    user.password_hash = auth.hash_password(new_password)
+
+    # Revoke all other sessions (security best practice)
+    auth.revoke_all_user_sessions(user.id, except_session_id=current_session.id)
+
+    write_audit(
+        "auth.change_password.success",
+        user_id=user.id,
+        actor=user.email,
+        ip=request.remote_addr,
+        user_agent=request.headers.get("User-Agent", "")[:200],
+        revoked_other_sessions=True,
+    )
+    db.session.commit()
+
+    return success({
+        "message": "Password changed. All other sessions revoked.",
+    })
+
+
+@app.route("/auth/change-email", methods=["POST"])
+@auth.require_user
+def auth_change_email():
+    """Change the current user's email.
+
+    Requires the current password as confirmation.
+    All other sessions are revoked.
+    """
+    user = request.current_user
+    current_session = request.current_session
+    data = request.get_json(silent=True) or {}
+
+    new_email = (data.get("new_email") or "").strip().lower()
+    password = data.get("password") or ""
+
+    if not auth.verify_password(password, user.password_hash):
+        write_audit(
+            "auth.change_email.fail",
+            user_id=user.id,
+            actor=user.email,
+            ip=request.remote_addr,
+            user_agent=request.headers.get("User-Agent", "")[:200],
+            status="error",
+        )
+        db.session.commit()
+        return error("Password is incorrect", 401)
+
+    if not auth.is_valid_email(new_email):
+        return error("Invalid email address")
+
+    if new_email == user.email:
+        return error("New email is the same as current email")
+
+    existing = User.query.filter_by(email=new_email).first()
+    if existing:
+        return error("Email already in use", 409)
+
+    old_email = user.email
+    user.email = new_email
+    # Any change to email should mark as unverified (security)
+    user.email_verified = False
+
+    auth.revoke_all_user_sessions(user.id, except_session_id=current_session.id)
+
+    write_audit(
+        "auth.change_email.success",
+        user_id=user.id,
+        actor=old_email,
+        ip=request.remote_addr,
+        user_agent=request.headers.get("User-Agent", "")[:200],
+        old_email=old_email,
+        new_email=new_email,
+        revoked_other_sessions=True,
+    )
+    db.session.commit()
+
+    return success({
+        "message": "Email changed. Verification required.",
+        "user": user.to_dict(),
+    })
+
+
+@app.route("/auth/sessions")
+@auth.require_user
+def auth_list_sessions():
+    """List all active sessions of the current user."""
+    user = request.current_user
+    current = request.current_session
+
+    now = int(time.time())
+    sessions = Session.query.filter(
+        Session.user_id == user.id,
+        Session.revoked_at.is_(None),
+        Session.expires_at > now,
+    ).order_by(Session.created_at.desc()).all()
+
+    return success({
+        "sessions": [
+            {
+                **s.to_dict(),
+                "is_current": s.id == current.id,
+            }
+            for s in sessions
+        ],
+        "count": len(sessions),
+    })
+
+
 # ===== Admin API =====
 
 @app.route("/admin/stats")
