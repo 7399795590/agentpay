@@ -26,3 +26,6 @@ Thumbs.db
 
 # Flask instance (contains DB)
 instance/
+last_agent_id.txt
+stripe_url.txt
+*.bak

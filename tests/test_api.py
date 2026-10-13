@@ -17,6 +17,8 @@ client = None
 def setup_module():
     """Set up a fresh in-memory test client for the whole module."""
     global client
+    # Set a test admin key so admin endpoints are enabled during tests
+    os.environ["ADMIN_API_KEY"] = "test_admin_key_for_ci_only"
     app.config["TESTING"] = True
     # Use in-memory SQLite so each test session starts fresh
     app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"

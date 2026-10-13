@@ -9,9 +9,16 @@ from webhooks import fire_webhook
 from ratelimit import limit, limiter
 from logging_utils import setup_logging, generate_request_id
 import stripe_integration
+from security import safe_compare, get_allowed_origins, apply_security_headers
 
 app = Flask(__name__)
-CORS(app)
+
+# Restricted CORS: only known origins
+CORS(app, resources={r"/*": {"origins": get_allowed_origins()}},
+     supports_credentials=False,
+     allow_headers=["Content-Type", "Authorization", "Idempotency-Key", "Stripe-Signature"],
+     methods=["GET", "POST", "DELETE", "OPTIONS"])
+
 init_db(app)
 
 # Setup structured logging
@@ -29,10 +36,12 @@ def before_request():
 
 @app.after_request
 def after_request(response):
-    """Add request ID to response headers."""
+    """Add request ID + security headers to every response."""
     from flask import g
     if hasattr(g, "request_id"):
         response.headers["X-Request-ID"] = g.request_id
+    # Apply security headers (HSTS, X-Frame-Options, etc.)
+    apply_security_headers(response)
     return response
 
 
@@ -117,7 +126,7 @@ def require_api_key(view_func):
         agent = find_agent(agent_id)
         if not agent:
             return error("Agent not found", 404)
-        if agent.api_key != token:
+        if not safe_compare(agent.api_key, token):
             return error("API key does not match this agent", 403)
         return view_func(*args, **kwargs)
     return wrapper
@@ -141,7 +150,21 @@ def require_admin(view_func):
         if not auth.startswith("Bearer "):
             return error("Missing Authorization (use: Bearer <ADMIN_API_KEY>)", 401)
         token = auth[7:].strip()
-        if token != admin_key:
+        if not safe_compare(token, admin_key):
+            # Log failed admin attempts (security signal)
+            try:
+                from models import write_audit
+                write_audit(
+                    "admin.auth.fail",
+                    actor="unknown",
+                    ip=request.remote_addr,
+                    user_agent=request.headers.get("User-Agent", "")[:200],
+                    status="error",
+                    path=request.path,
+                )
+                db.session.commit()
+            except Exception:
+                db.session.rollback()
             return error("Invalid admin key", 403)
         return view_func(*args, **kwargs)
     return wrapper
@@ -412,6 +435,7 @@ def admin_set_balance(agent_id):
 # ===== Audit Log =====
 
 @app.route("/admin/audit")
+@require_admin
 @limit(key_ip, "transactions")
 def list_audit():
     """List recent audit log entries. Admin-only in production."""
@@ -560,6 +584,7 @@ def cancel_subscription(agent_id, sub_id):
 
 
 @app.route("/admin/run-billing", methods=["POST"])
+@require_admin
 def run_billing():
     """Run billing for all due subscriptions. Admin-only in production."""
     now = int(time.time())
