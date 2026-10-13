@@ -23,6 +23,9 @@ def get_database_url():
         url = url.replace("&channel_binding=require", "")
         url = url.replace("?channel_binding=require&", "?")
         url = url.replace("?channel_binding=require", "")
+        # Force psycopg2 driver (SQLAlchemy defaults to psycopg v3 if not specified)
+        if url.startswith("postgresql://"):
+            url = url.replace("postgresql://", "postgresql+psycopg2://", 1)
         return url
     return "sqlite:///agentpay.db"
 
