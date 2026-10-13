@@ -4,12 +4,13 @@ from flask import Flask, request, jsonify
 from flask_cors import CORS
 
 from database import db, init_db
-from models import Agent, Transaction, Subscription, AuditLog, write_audit
+from models import Agent, Transaction, Subscription, AuditLog, User, Session, write_audit
 from webhooks import fire_webhook
 from ratelimit import limit, limiter
 from logging_utils import setup_logging, generate_request_id
 import stripe_integration
 from security import safe_compare, get_allowed_origins, apply_security_headers
+import auth
 
 app = Flask(__name__)
 
@@ -340,6 +341,173 @@ def redoc_ui():
 </body>
 </html>"""
     return app.response_class(response=html, status=200, mimetype="text/html")
+
+
+
+# ===== Auth API (users + sessions) =====
+
+@app.route("/auth/register", methods=["POST"])
+@limit(key_ip, "create")
+def auth_register():
+    """Register a new user account.
+
+    Security note: the FIRST registered user becomes 'admin' automatically
+    so the system is bootstrappable. Subsequent registrations default to
+    'developer'. Admins can promote/demote later.
+    """
+    data = request.get_json(silent=True) or {}
+    email = (data.get("email") or "").strip().lower()
+    password = data.get("password") or ""
+
+    if not auth.is_valid_email(email):
+        return error("Invalid email address")
+    ok, msg = auth.validate_password(password)
+    if not ok:
+        return error(msg)
+
+    # Check duplicate
+    existing = User.query.filter_by(email=email).first()
+    if existing:
+        return error("Email already registered", 409)
+
+    # Bootstrap: first user = admin
+    is_first_user = User.query.count() == 0
+    role = "admin" if is_first_user else "developer"
+
+    user = User(
+        email=email,
+        password_hash=auth.hash_password(password),
+        role=role,
+        is_active=True,
+        email_verified=False,
+    )
+    db.session.add(user)
+    db.session.flush()
+
+    # Audit
+    write_audit(
+        "auth.register",
+        user_id=user.id,
+        actor=email,
+        ip=request.remote_addr,
+        user_agent=request.headers.get("User-Agent", "")[:200],
+        role=role,
+        is_first_user=is_first_user,
+    )
+    db.session.commit()
+
+    return success({
+        "user": user.to_dict(),
+        "bootstrap_admin": is_first_user,
+    }, 201)
+
+
+@app.route("/auth/login", methods=["POST"])
+@limit(key_ip, "create")  # reuse 'create' rate limit (5/min per IP)
+def auth_login():
+    """Log in with email + password. Sets a session cookie."""
+    data = request.get_json(silent=True) or {}
+    email = (data.get("email") or "").strip().lower()
+    password = data.get("password") or ""
+
+    if not email or not password:
+        return error("Email and password required")
+
+    user = User.query.filter_by(email=email).first()
+    # Uniform error to prevent user enumeration
+    GENERIC_ERR = "Invalid credentials"
+
+    if not user:
+        return error(GENERIC_ERR, 401)
+
+    if not user.is_active:
+        return error("Account disabled", 403)
+
+    if auth.is_user_locked(user):
+        return error("Account temporarily locked. Try again later.", 429)
+
+    if not auth.verify_password(password, user.password_hash):
+        auth.record_failed_login(user)
+        write_audit(
+            "auth.login.fail",
+            user_id=user.id,
+            actor=email,
+            ip=request.remote_addr,
+            user_agent=request.headers.get("User-Agent", "")[:200],
+            status="error",
+        )
+        db.session.commit()
+        return error(GENERIC_ERR, 401)
+
+    # Success — create session
+    session = auth.create_session(
+        user,
+        ip=request.remote_addr,
+        user_agent=request.headers.get("User-Agent", "")[:200],
+    )
+    auth.reset_failed_logins(user)
+
+    write_audit(
+        "auth.login.success",
+        user_id=user.id,
+        actor=email,
+        ip=request.remote_addr,
+        user_agent=request.headers.get("User-Agent", "")[:200],
+        session_id=session.id[:8] + "...",
+    )
+    db.session.commit()
+
+    resp = success({"user": user.to_dict()})
+    auth.set_session_cookie(resp, session)
+    return resp
+
+
+@app.route("/auth/logout", methods=["POST"])
+def auth_logout():
+    """Log out the current session."""
+    session = auth.get_session_from_request()
+    if session:
+        user_id = session.user_id
+        auth.revoke_session(session)
+        write_audit(
+            "auth.logout",
+            user_id=user_id,
+            ip=request.remote_addr,
+            user_agent=request.headers.get("User-Agent", "")[:200],
+        )
+        db.session.commit()
+    resp = success({"message": "Logged out"})
+    auth.clear_session_cookie(resp)
+    return resp
+
+
+@app.route("/auth/me")
+@auth.require_user
+def auth_me():
+    """Return the authenticated user's info + current session."""
+    user = request.current_user
+    session = request.current_session
+    return success({
+        "user": user.to_dict(),
+        "session": session.to_dict(),
+    })
+
+
+@app.route("/auth/logout-all", methods=["POST"])
+@auth.require_user
+def auth_logout_all():
+    """Revoke all sessions except the current one."""
+    user = request.current_user
+    current = request.current_session
+    auth.revoke_all_user_sessions(user.id, except_session_id=current.id)
+    write_audit(
+        "auth.logout_all",
+        user_id=user.id,
+        ip=request.remote_addr,
+        user_agent=request.headers.get("User-Agent", "")[:200],
+    )
+    db.session.commit()
+    return success({"message": "All other sessions revoked"})
 
 
 # ===== Admin API =====
