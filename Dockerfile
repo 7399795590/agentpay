@@ -4,6 +4,7 @@ WORKDIR /app
 
 ENV PORT=5000
 ENV PYTHONUNBUFFERED=1
+ENV FLASK_APP=app.py
 
 # Install system deps for psycopg2
 RUN apt-get update && apt-get install -y --no-install-recommends \
