@@ -17,6 +17,10 @@ def get_database_url():
         # Railway/Heroku may give "postgres://" instead of "postgresql://"
         if url.startswith("postgres://"):
             url = url.replace("postgres://", "postgresql://", 1)
+        # psycopg2 2.9 cannot handle channel_binding=require (Neon default)
+        url = url.replace("&channel_binding=require", "")
+        url = url.replace("?channel_binding=require&", "?")
+        url = url.replace("?channel_binding=require", "")
         return url
     return "sqlite:///agentpay.db"
 
