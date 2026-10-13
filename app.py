@@ -1337,42 +1337,276 @@ def cancel_subscription(agent_id, sub_id):
 
 
 @app.route("/admin/run-billing", methods=["POST"])
+@csrf.require_csrf
 @require_admin
+@limit(key_ip, "topup")
 def run_billing():
-    """Run billing for all due subscriptions. Admin-only in production."""
-    now = int(time.time())
-    due = Subscription.query.filter(
-        Subscription.status == "active",
-        Subscription.next_charge_at <= now,
-    ).all()
-    processed = []
-    failed = []
-    for sub in due:
-        agent = db.session.get(Agent, sub.agent_id)
-        if not agent:
-            sub.status = "cancelled"
-            db.session.commit()
-            failed.append({"sub_id": sub.id, "reason": "agent_missing"})
-            continue
-        if agent.balance < sub.amount:
-            failed.append({"sub_id": sub.id, "reason": "insufficient_balance"})
-            continue
-        agent.balance -= sub.amount
-        tx = Transaction(
-            agent_id=agent.id,
-            type="charge",
-            amount=sub.amount,
-            description=f"Subscription: {sub.name} (#{sub.id})",
-        )
-        sub.next_charge_at = now + sub.interval_seconds
-        db.session.add(tx)
-        db.session.flush()  # get tx.id without committing
-        audit.write_audit_secure("subscription.billing", agent_id=agent.id,
-                    metadata={"sub_id": sub.id, "name": sub.name,
-                              "amount": sub.amount, "tx_id": tx.id})
+    """Run billing for due subscriptions.
+
+    Security:
+    - CSRF required (session-based admin)
+    - Idempotency-Key header required (prevents duplicate charges)
+    - dry_run defaults to true; must pass {"dry_run": false} to actually charge
+    - Batch limit: 100 subscriptions per run
+    - PostgreSQL advisory lock: prevents concurrent runs
+    - Every run logged in audit log
+
+    Body (JSON):
+      - dry_run (bool): default true
+      - limit (int): default 100, max 100
+      - Idempotency-Key (header): required
+    """
+    from models import IdempotencyKey, BillingRun
+    from sqlalchemy import text as sql_text
+    import hashlib, json as _json
+
+    # ===== 1. Read & validate body =====
+    data = request.get_json(silent=True) or {}
+    dry_run = data.get("dry_run", True)
+    if not isinstance(dry_run, bool):
+        return error("dry_run must be boolean")
+
+    try:
+        limit_n = int(data.get("limit", 100))
+        if limit_n < 1 or limit_n > 100:
+            return error("limit must be between 1 and 100")
+    except (ValueError, TypeError):
+        return error("Invalid limit")
+
+    # ===== 2. Idempotency key =====
+    idem_key = request.headers.get("Idempotency-Key", "").strip()
+    if not idem_key or len(idem_key) > 128:
+        return error("Idempotency-Key header required (max 128 chars)", 400)
+
+    # Request fingerprint: (endpoint, dry_run, limit)
+    fingerprint_src = f"run-billing|dry_run={dry_run}|limit={limit_n}"
+    fingerprint = hashlib.sha256(fingerprint_src.encode()).hexdigest()
+
+    # Check existing idempotency record
+    existing_idem = IdempotencyKey.query.filter_by(key=idem_key).first()
+    if existing_idem:
+        # Same key + same fingerprint = return cached response
+        if existing_idem.request_fingerprint == fingerprint:
+            if existing_idem.status == "completed" and existing_idem.response_json:
+                cached = _json.loads(existing_idem.response_json)
+                cached["_idempotent_replay"] = True
+                return success(cached)
+            if existing_idem.status == "pending":
+                return error("This request is currently being processed", 409)
+            # Failed — allow retry? No, protect. Return error.
+            return error("Previous attempt with this key failed. Use a new key.", 409)
+        # Same key + different fingerprint = conflict
+        return error("Idempotency-Key reused with different parameters", 409)
+
+    # Register new idempotency key (status=pending)
+    idem = IdempotencyKey(
+        key=idem_key,
+        endpoint="/admin/run-billing",
+        request_fingerprint=fingerprint,
+        status="pending",
+    )
+    db.session.add(idem)
+
+    # ===== 3. Create BillingRun record =====
+    actor_user = getattr(request, "current_user", None)
+    run = BillingRun(
+        run_key=idem_key,
+        dry_run=dry_run,
+        status="running",
+        actor_user_id=actor_user.id if actor_user else None,
+        actor_email=actor_user.email if actor_user else "admin-api-key",
+    )
+    db.session.add(run)
+    db.session.commit()
+
+    # ===== 4. Acquire lock (prevents concurrent billing) =====
+    # Postgres: use pg_try_advisory_lock (global across all app instances)
+    # SQLite/dev: fall back to an in-process lock
+    LOCK_KEY = 20261013190000  # arbitrary constant
+    lock_acquired = False
+    lock_is_advisory = False
+
+    db_url = app.config.get("SQLALCHEMY_DATABASE_URI", "")
+    is_postgres = db_url.startswith("postgresql")
+
+    if is_postgres:
+        try:
+            lock_result = db.session.execute(
+                sql_text("SELECT pg_try_advisory_lock(:key)"),
+                {"key": LOCK_KEY},
+            ).scalar()
+            if lock_result:
+                lock_acquired = True
+                lock_is_advisory = True
+        except Exception as e:
+            app.logger.warning(f"advisory lock failed: {e}")
+    else:
+        # SQLite / dev: use threading lock
+        import threading
+        if not hasattr(app, "_billing_lock"):
+            app._billing_lock = threading.Lock()
+        if app._billing_lock.acquire(blocking=False):
+            lock_acquired = True
+
+    if not lock_acquired:
+        idem.status = "failed"
+        run.status = "aborted"
+        run.error_message = "another billing run is in progress"
         db.session.commit()
-        processed.append({"sub_id": sub.id, "amount": sub.amount, "tx_id": tx.id})
-    return success({"processed": processed, "failed": failed, "total": len(due)})
+        return error("Another billing run is in progress. Try again later.", 409)
+
+    try:
+        # ===== 5. Process =====
+        now = int(time.time())
+        due = Subscription.query.filter(
+            Subscription.status == "active",
+            Subscription.next_charge_at <= now,
+        ).limit(limit_n).all()
+
+        processed = []
+        failed = []
+        total_amount = 0
+
+        for sub in due:
+            agent = db.session.get(Agent, sub.agent_id)
+            if not agent:
+                sub.status = "cancelled"
+                db.session.flush()
+                failed.append({"sub_id": sub.id, "reason": "agent_missing"})
+                continue
+
+            if agent.balance < sub.amount:
+                failed.append({
+                    "sub_id": sub.id,
+                    "reason": "insufficient_balance",
+                    "needed": sub.amount,
+                    "have": agent.balance,
+                })
+                continue
+
+            if dry_run:
+                # Preview only — no changes
+                processed.append({
+                    "sub_id": sub.id,
+                    "amount": sub.amount,
+                    "agent_id": agent.id,
+                    "preview": True,
+                })
+                total_amount += sub.amount
+                continue
+
+            # Real charge
+            agent.balance -= sub.amount
+            tx = Transaction(
+                agent_id=agent.id,
+                type="charge",
+                amount=sub.amount,
+                description=f"Subscription: {sub.name} (#{sub.id})",
+            )
+            sub.next_charge_at = now + sub.interval_seconds
+            db.session.add(tx)
+            db.session.flush()
+
+            audit.write_audit_secure(
+                "subscription.billing",
+                agent_id=agent.id,
+                user_id=actor_user.id if actor_user else None,
+                actor=actor_user.email if actor_user else "admin-api-key",
+                ip=request.remote_addr,
+                sub_id=sub.id,
+                name=sub.name,
+                amount=sub.amount,
+                tx_id=tx.id,
+                run_id=run.id,
+            )
+            processed.append({
+                "sub_id": sub.id,
+                "amount": sub.amount,
+                "tx_id": tx.id,
+            })
+            total_amount += sub.amount
+
+        # ===== 6. Finalize =====
+        run.status = "completed"
+        run.processed_count = len(processed)
+        run.failed_count = len(failed)
+        run.total_due = len(due)
+        run.total_amount_cents = total_amount
+        run.finished_at = int(time.time())
+        run.details_json = _json.dumps({
+            "processed": processed,
+            "failed": failed,
+        })
+
+        response_data = {
+            "dry_run": dry_run,
+            "processed": processed,
+            "failed": failed,
+            "total": len(due),
+            "total_amount_cents": total_amount,
+            "run_id": run.id,
+        }
+
+        idem.status = "completed"
+        idem.response_json = _json.dumps(response_data)
+        idem.completed_at = int(time.time())
+
+        # Log the run
+        audit.write_audit_secure(
+            "admin.billing.run",
+            user_id=actor_user.id if actor_user else None,
+            actor=actor_user.email if actor_user else "admin-api-key",
+            ip=request.remote_addr,
+            user_agent=request.headers.get("User-Agent", "")[:200],
+            dry_run=dry_run,
+            processed=len(processed),
+            failed=len(failed),
+            total_amount_cents=total_amount,
+            run_id=run.id,
+        )
+
+        db.session.commit()
+
+        # Release lock
+        if lock_is_advisory:
+            try:
+                db.session.execute(sql_text("SELECT pg_advisory_unlock(:key)"), {"key": LOCK_KEY})
+                db.session.commit()
+            except Exception:
+                db.session.rollback()
+        else:
+            try:
+                app._billing_lock.release()
+            except Exception:
+                pass
+
+        return success(response_data)
+
+    except Exception as e:
+        db.session.rollback()
+        # Release lock on failure
+        if lock_is_advisory:
+            try:
+                db.session.execute(sql_text("SELECT pg_advisory_unlock(:key)"), {"key": LOCK_KEY})
+                db.session.commit()
+            except Exception:
+                db.session.rollback()
+        else:
+            try:
+                app._billing_lock.release()
+            except Exception:
+                pass
+        # Mark failed
+        try:
+            idem.status = "failed"
+            run.status = "failed"
+            run.error_message = str(e)[:500]
+            run.finished_at = int(time.time())
+            db.session.commit()
+        except Exception:
+            db.session.rollback()
+        app.logger.error(f"run_billing failed: {e}", exc_info=True)
+        return error("Billing run failed", 500)
 
 
 # ===== Stripe Endpoints =====

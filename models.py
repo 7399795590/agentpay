@@ -248,6 +248,69 @@ class AuditLog(db.Model):
         }
 
 
+# ===== Idempotency & Billing =====
+
+class IdempotencyKey(db.Model):
+    """Stores idempotency keys and their responses.
+
+    Used by /admin/run-billing to prevent duplicate charges on retry.
+    """
+    __tablename__ = "idempotency_keys"
+
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    key = db.Column(db.String(128), unique=True, nullable=False, index=True)
+    endpoint = db.Column(db.String(100), nullable=False, index=True)
+    request_fingerprint = db.Column(db.String(64), nullable=False)  # SHA-256 of request params
+    response_json = db.Column(db.Text, nullable=True)  # cached response body
+    status = db.Column(db.String(20), nullable=False, default="pending")  # pending, completed, failed
+    created_at = db.Column(db.Integer, default=lambda: int(time.time()), index=True)
+    completed_at = db.Column(db.Integer, nullable=True)
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "key": self.key[:12] + "...",
+            "endpoint": self.endpoint,
+            "status": self.status,
+            "created_at": self.created_at,
+            "completed_at": self.completed_at,
+        }
+
+
+class BillingRun(db.Model):
+    """Records each run of the billing engine (dry-run or live)."""
+    __tablename__ = "billing_runs"
+
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    run_key = db.Column(db.String(128), unique=True, nullable=False, index=True)  # idempotency key
+    dry_run = db.Column(db.Boolean, nullable=False, default=True)
+    status = db.Column(db.String(20), nullable=False, default="running")  # running, completed, failed, aborted
+    processed_count = db.Column(db.Integer, default=0)
+    failed_count = db.Column(db.Integer, default=0)
+    total_due = db.Column(db.Integer, default=0)  # number of due subscriptions
+    total_amount_cents = db.Column(db.Integer, default=0)
+    actor_user_id = db.Column(db.String(32), nullable=True)
+    actor_email = db.Column(db.String(255), nullable=True)
+    error_message = db.Column(db.Text, nullable=True)
+    details_json = db.Column(db.Text, nullable=True)  # per-subscription results
+    started_at = db.Column(db.Integer, default=lambda: int(time.time()), index=True)
+    finished_at = db.Column(db.Integer, nullable=True)
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "run_key": self.run_key[:12] + "...",
+            "dry_run": self.dry_run,
+            "status": self.status,
+            "processed": self.processed_count,
+            "failed": self.failed_count,
+            "total_due": self.total_due,
+            "total_amount_cents": self.total_amount_cents,
+            "actor_email": self.actor_email,
+            "started_at": self.started_at,
+            "finished_at": self.finished_at,
+        }
+
 # Sensitive fields that must NEVER be stored in audit metadata
 _AUDIT_SENSITIVE_KEYS = {
     "password", "password_hash", "new_password", "current_password",
