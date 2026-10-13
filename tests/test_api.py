@@ -74,7 +74,7 @@ def test_full_cycle():
     agent_id, api_key = _create_agent("cycle")
     h = _auth(api_key)
 
-    r = client.get("/agents/" + agent_id)
+    r = client.get("/agents/" + agent_id, headers=h)
     assert r.get_json()["agent"]["balance"] == 0
 
     r = client.post("/agents/" + agent_id + "/topup",

@@ -198,21 +198,33 @@ def create_agent():
     if currency not in SUPPORTED_CURRENCIES:
         return error(f"Unsupported currency. Choose from: {SUPPORTED_CURRENCIES}")
     agent = Agent(name=name, webhook_url=webhook_url, currency=currency)
+    # If logged in, attach ownership automatically
+    owner = auth.attach_owner_if_logged_in(agent)
     db.session.add(agent)
     db.session.flush()
-    write_audit("agent.create", agent_id=agent.id, ip=request.remote_addr,
+    write_audit("agent.create", agent_id=agent.id,
+                user_id=owner.id if owner else None,
+                actor=owner.email if owner else "anonymous",
+                ip=request.remote_addr,
                 user_agent=request.headers.get("User-Agent", "")[:200],
-                name=name, currency=currency, webhook_url=webhook_url or None)
+                name=name, currency=currency, webhook_url=webhook_url or None,
+                owner_attached=bool(owner))
     db.session.commit()
     return success({"agent": agent.to_dict(), "api_key": agent.api_key}, 201)
 
 
 @app.route("/agents/<agent_id>")
 @limit(key_ip, "get_agent")
+@auth.require_agent_owner
 def get_agent(agent_id):
-    agent = find_agent(agent_id)
-    if not agent:
-        return error("Agent not found", 404)
+    """Get agent details.
+
+    Authorization:
+    - Session (owner or admin)
+    - OR API key (Bearer ap_...) matching the agent
+    Returns 404 if not authorized (no existence leak).
+    """
+    agent = request.current_agent
     return success({"agent": agent.to_dict()})
 
 
@@ -342,6 +354,121 @@ def redoc_ui():
 </html>"""
     return app.response_class(response=html, status=200, mimetype="text/html")
 
+
+
+
+# ===== User-owned agents =====
+
+@app.route("/me/agents", methods=["POST"])
+@auth.require_user
+@limit(key_ip, "create")
+def me_create_agent():
+    """Create an agent owned by the authenticated user.
+
+    Unlike POST /agents/create, this endpoint requires a session and always
+    sets owner_id from the authenticated user (never from request body).
+    """
+    user = request.current_user
+    data = request.get_json(silent=True) or {}
+    name = (data.get("name") or "").strip()
+    if not name or len(name) > 100:
+        return error("Invalid name (required, max 100 chars)")
+    webhook_url = (data.get("webhook_url") or "").strip() or None
+    if webhook_url and not webhook_url.startswith(("http://", "https://")):
+        return error("webhook_url must start with http:// or https://")
+
+    currency = (data.get("currency") or "USD").upper()
+    from models import SUPPORTED_CURRENCIES
+    if currency not in SUPPORTED_CURRENCIES:
+        return error(f"Unsupported currency. Choose from: {SUPPORTED_CURRENCIES}")
+
+    agent = Agent(
+        name=name,
+        webhook_url=webhook_url,
+        currency=currency,
+        owner_id=user.id,  # always from session, never from body
+    )
+    db.session.add(agent)
+    db.session.flush()
+    write_audit(
+        "agent.create.owned",
+        agent_id=agent.id,
+        user_id=user.id,
+        actor=user.email,
+        ip=request.remote_addr,
+        user_agent=request.headers.get("User-Agent", "")[:200],
+        name=name, currency=currency,
+    )
+    db.session.commit()
+    return success({"agent": agent.to_dict(), "api_key": agent.api_key}, 201)
+
+
+@app.route("/me/agents")
+@auth.require_user
+@limit(key_ip, "get_agent")
+def me_list_agents():
+    """List agents owned by the authenticated user."""
+    user = request.current_user
+    agents = Agent.query.filter_by(owner_id=user.id).order_by(Agent.created_at.desc()).all()
+    return success({
+        "agents": [a.to_dict() for a in agents],
+        "count": len(agents),
+    })
+
+
+@app.route("/agents/<agent_id>/claim", methods=["POST"])
+@auth.require_user
+@limit(key_ip, "topup")
+def claim_agent(agent_id):
+    """Claim an orphan agent (owner_id IS NULL).
+
+    Requirements:
+    - User must be authenticated
+    - Agent must exist and have no owner (owner_id is NULL)
+    - User must provide their password (proof of intent)
+    - Agent must not be owned by another user
+
+    Returns 404 if agent missing, 409 if already owned.
+    """
+    user = request.current_user
+    data = request.get_json(silent=True) or {}
+    password = data.get("password") or ""
+
+    if not auth.verify_password(password, user.password_hash):
+        write_audit(
+            "agent.claim.fail",
+            agent_id=agent_id,
+            user_id=user.id,
+            actor=user.email,
+            ip=request.remote_addr,
+            user_agent=request.headers.get("User-Agent", "")[:200],
+            status="error",
+            reason="bad_password",
+        )
+        db.session.commit()
+        return error("Password is incorrect", 401)
+
+    agent = db.session.get(Agent, agent_id)
+    if not agent:
+        return error("Agent not found", 404)
+
+    if agent.owner_id is not None:
+        if agent.owner_id == user.id:
+            return success({"agent": agent.to_dict(), "message": "Already yours"})
+        return error("Agent already claimed by another user", 409)
+
+    # Attach to current user
+    agent.owner_id = user.id
+    write_audit(
+        "agent.claim.success",
+        agent_id=agent.id,
+        user_id=user.id,
+        actor=user.email,
+        ip=request.remote_addr,
+        user_agent=request.headers.get("User-Agent", "")[:200],
+    )
+    db.session.commit()
+    return success({"agent": agent.to_dict()})
 
 
 # ===== Auth API (users + sessions) =====

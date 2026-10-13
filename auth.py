@@ -176,6 +176,89 @@ def require_role(*allowed_roles):
     return decorator
 
 
+
+# ===== Agent ownership =====
+
+def get_agent_for_request(agent_id: str):
+    """Get an agent if the current request is authorized to see it.
+
+    Authorization rules:
+    - If request has a valid session: user must be owner OR admin.
+    - Else if request has Authorization: Bearer ap_... : API key must match.
+    - Else: not authorized.
+
+    Returns the agent or None. Never leaks existence: caller should return 404.
+    """
+    # Late import to avoid circular dependency
+    from models import Agent
+
+    agent = db.session.get(Agent, agent_id)
+    if not agent:
+        return None
+
+    # 1) Session-based (user must be owner or admin)
+    session = get_session_from_request()
+    if session:
+        user = db.session.get(User, session.user_id)
+        if user and user.is_active:
+            if user.role == "admin":
+                return agent
+            if agent.owner_id == user.id:
+                return agent
+            return None
+        return None
+
+    # 2) API key based (agent itself)
+    auth_header = request.headers.get("Authorization", "")
+    if auth_header.startswith("Bearer "):
+        token = auth_header[7:].strip()
+        if token.startswith("ap_") and _safe_eq(agent.api_key, token):
+            return agent
+
+    return None
+
+
+def _safe_eq(a, b) -> bool:
+    """Local timing-safe compare (avoids importing security.py globally)."""
+    import hmac
+    if not isinstance(a, str) or not isinstance(b, str):
+        return False
+    try:
+        return hmac.compare_digest(a.encode("utf-8"), b.encode("utf-8"))
+    except Exception:
+        return False
+
+
+def require_agent_owner(view_func):
+    """Decorator: require that the current request may access the agent in
+    the URL parameter `agent_id`. Attaches the agent to request.current_agent.
+
+    Returns 404 (not 403) if not authorized, to avoid leaking existence.
+    """
+    @wraps(view_func)
+    def wrapper(*args, **kwargs):
+        agent_id = kwargs.get("agent_id")
+        if not agent_id:
+            return error("Missing agent_id", 400)
+        agent = get_agent_for_request(agent_id)
+        if not agent:
+            return error("Agent not found", 404)
+        request.current_agent = agent
+        return view_func(*args, **kwargs)
+    return wrapper
+
+
+def attach_owner_if_logged_in(agent):
+    """If the current request has a valid session, set agent.owner_id."""
+    session = get_session_from_request()
+    if not session:
+        return None
+    user = db.session.get(User, session.user_id)
+    if not user or not user.is_active:
+        return None
+    agent.owner_id = user.id
+    return user
+
 # ===== Validation =====
 
 def is_valid_email(email: str) -> bool:
