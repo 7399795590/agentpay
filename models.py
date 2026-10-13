@@ -311,6 +311,79 @@ class BillingRun(db.Model):
             "finished_at": self.finished_at,
         }
 
+# ===== Topup Tracking (Task 5) =====
+
+class TopupRecord(db.Model):
+    """Records every topup attempt (Stripe or admin).
+
+    Central record for auditability and daily-limit enforcement.
+    """
+    __tablename__ = "topup_records"
+
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    agent_id = db.Column(db.String(32), db.ForeignKey("agents.id"), nullable=False, index=True)
+    amount_cents = db.Column(db.Integer, nullable=False)
+    currency = db.Column(db.String(3), nullable=False, default="USD")
+
+    # Source: "stripe" | "admin" | "migration"
+    source = db.Column(db.String(20), nullable=False, index=True)
+
+    # Status: "completed" | "failed" | "pending"
+    status = db.Column(db.String(20), nullable=False, default="completed", index=True)
+
+    # References
+    idempotency_key = db.Column(db.String(128), nullable=True, index=True)
+    stripe_session_id = db.Column(db.String(200), nullable=True, unique=True, index=True)
+    transaction_id = db.Column(db.Integer, db.ForeignKey("transactions.id"), nullable=True)
+
+    # Admin context (when source="admin")
+    actor_user_id = db.Column(db.String(32), nullable=True)
+    actor_email = db.Column(db.String(255), nullable=True)
+    reason = db.Column(db.String(500), nullable=True)
+
+    # Timestamps
+    created_at = db.Column(db.Integer, default=lambda: int(time.time()), index=True)
+    completed_at = db.Column(db.Integer, nullable=True)
+
+    agent = db.relationship("Agent", backref="topup_records", lazy=True)
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "agent_id": self.agent_id,
+            "amount_cents": self.amount_cents,
+            "currency": self.currency,
+            "source": self.source,
+            "status": self.status,
+            "reason": self.reason,
+            "created_at": self.created_at,
+            "completed_at": self.completed_at,
+        }
+
+
+class DailyTopupCounter(db.Model):
+    """Per-agent per-day aggregate of successful topups.
+
+    Used to enforce the daily topup limit atomically (row lock during UPDATE).
+    """
+    __tablename__ = "daily_topup_counters"
+
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    agent_id = db.Column(db.String(32), db.ForeignKey("agents.id"), nullable=False, index=True)
+    day = db.Column(db.String(10), nullable=False, index=True)  # YYYY-MM-DD (UTC)
+    total_cents = db.Column(db.Integer, nullable=False, default=0)
+
+    __table_args__ = (
+        db.UniqueConstraint("agent_id", "day", name="uq_daily_topup_agent_day"),
+    )
+
+    def to_dict(self):
+        return {
+            "agent_id": self.agent_id,
+            "day": self.day,
+            "total_cents": self.total_cents,
+        }
+
 # Sensitive fields that must NEVER be stored in audit metadata
 _AUDIT_SENSITIVE_KEYS = {
     "password", "password_hash", "new_password", "current_password",

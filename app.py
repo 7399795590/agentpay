@@ -13,6 +13,7 @@ from security import safe_compare, get_allowed_origins, apply_security_headers
 import auth
 import csrf
 import audit
+import topup_helpers
 
 app = Flask(__name__)
 
@@ -263,26 +264,37 @@ def get_agent(agent_id):
 @app.route("/agents/<agent_id>/topup", methods=["POST"])
 @limit(key_agent, "topup")
 @require_api_key
-def topup(agent_id):
-    agent = find_agent(agent_id)
-    if not agent:
-        return error("Agent not found", 404)
-    data = request.get_json(silent=True) or {}
-    amount = data.get("amount")
-    if not isinstance(amount, int) or amount <= 0 or amount > 1_000_000:
-        return error("Invalid amount (must be positive integer in cents, max 1,000,000)")
-    agent.balance += amount
-    tx = Transaction(agent_id=agent.id, type="topup", amount=amount,
-                     description=data.get("description", "Top-up"))
-    db.session.add(tx)
-    db.session.flush()
-    audit.write_audit_secure("topup", agent_id=agent.id, ip=request.remote_addr,
-                user_agent=request.headers.get("User-Agent", "")[:200],
-                actor=agent.api_key[:10] + "...",
-                amount=amount, tx_id=tx.id, description=tx.description)
-    db.session.commit()
-    fire_webhook(agent, "topup", tx)
-    return success({"agent": agent.to_dict(), "transaction": tx.to_dict()})
+def topup_disabled(agent_id):
+    """DEPRECATED — direct topup removed in task-5.
+
+    Agents must NEVER be able to increase their own balance.
+    Allowed alternatives:
+    - POST /agents/<id>/stripe/checkout    (real payment)
+    - POST /admin/agents/<id>/topup        (admin only, requires reason)
+
+    This stub is kept to avoid silent API breakage: it returns a clear error.
+    """
+    # Log the attempt (security signal)
+    try:
+        agent = find_agent(agent_id)
+        audit.write_audit_secure(
+            "topup.direct.blocked",
+            agent_id=agent_id,
+            actor=(agent.api_key[:10] + "...") if agent else "unknown",
+            ip=request.remote_addr,
+            user_agent=request.headers.get("User-Agent", "")[:200],
+            status="error",
+        )
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+
+    return error(
+        "Direct topup is disabled. "
+        "Use POST /agents/<id>/stripe/checkout for real payments, "
+        "or contact an admin to top up your balance.",
+        403,
+    )
 
 
 @app.route("/agents/<agent_id>/charge", methods=["POST"])
@@ -996,6 +1008,76 @@ def admin_enable_user(user_id):
     )
     db.session.commit()
     return success({"user": target.to_dict()})
+
+
+
+# ===== Admin: Topup with full protection =====
+
+@app.route("/admin/agents/<agent_id>/topup", methods=["POST"])
+@csrf.require_csrf
+@require_admin
+@limit(key_ip, "topup")
+def admin_topup(agent_id):
+    """Admin-only topup with daily limit + idempotency.
+
+    Body (JSON):
+      - amount_cents (int, required, >0, <= 50000)
+      - reason (str, required, 5-500 chars)
+      - currency (str, default "USD")
+    Headers:
+      - Idempotency-Key (required)
+      - X-CSRF-Token (required for session-based admin)
+    """
+    data = request.get_json(silent=True) or {}
+
+    amount_cents = data.get("amount_cents")
+    reason = (data.get("reason") or "").strip()
+    currency = (data.get("currency") or "USD").upper()
+
+    # Validate
+    if not isinstance(amount_cents, int) or amount_cents <= 0:
+        return error("amount_cents must be a positive integer", 400)
+    if amount_cents > topup_helpers.MAX_TOPUP_PER_TXN_CENTS:
+        return error(
+            f"amount_cents exceeds per-transaction limit "
+            f"({topup_helpers.MAX_TOPUP_PER_TXN_CENTS} cents = "
+            f"${topup_helpers.MAX_TOPUP_PER_TXN_CENTS/100:.2f})",
+            400,
+        )
+    if len(reason) < 5 or len(reason) > 500:
+        return error("reason is required (5-500 chars)", 400)
+
+    idem_key = request.headers.get("Idempotency-Key", "").strip()
+    if not idem_key or len(idem_key) > 128:
+        return error("Idempotency-Key header required (max 128 chars)", 400)
+
+    actor_user = getattr(request, "current_user", None)
+
+    result = topup_helpers.perform_topup(
+        agent_id=agent_id,
+        amount_cents=amount_cents,
+        source="admin",
+        currency=currency,
+        actor_user=actor_user,
+        actor_email=actor_user.email if actor_user else "admin-api-key",
+        reason=reason,
+        idempotency_key=idem_key,
+    )
+
+    if not result["ok"]:
+        code = result.get("code", 400)
+        return error(result["error"], code)
+
+    if result.get("replay"):
+        return success(result["data"])
+
+    # Fire webhook
+    try:
+        fire_webhook(result["agent"], "topup", result["transaction"])
+    except Exception:
+        pass
+
+    return success(result["data"], 201)
 
 
 # ===== Admin API =====

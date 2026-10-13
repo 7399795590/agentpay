@@ -24,17 +24,26 @@ def _csrf(client):
 
 
 def _create_agent_with_balance(client, name, balance=10000):
-    """Create an owned agent and topup its balance."""
+    """Create an owned agent and top up its balance via topup_helpers.
+
+    Note: /agents/{id}/topup is disabled (task-5). We use the helper directly.
+    """
+    from app import app
+    import topup_helpers
+
     r = client.post("/me/agents", json={"name": name})
     assert r.status_code == 201, r.get_json()
     agent_id = r.get_json()["agent"]["id"]
     api_key = r.get_json()["api_key"]
-    r2 = client.post(
-        f"/agents/{agent_id}/topup",
-        json={"amount": balance},
-        headers={"Authorization": f"Bearer {api_key}"},
-    )
-    assert r2.status_code == 200, r2.get_json()
+
+    with app.app_context():
+        result = topup_helpers.perform_topup(
+            agent_id=agent_id,
+            amount_cents=balance,
+            source="migration",
+        )
+        assert result["ok"], result.get("error")
+
     return agent_id, api_key
 
 

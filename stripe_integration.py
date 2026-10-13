@@ -78,47 +78,91 @@ def verify_webhook(payload: bytes, signature: str) -> dict:
 
 
 def credit_agent_from_checkout(session) -> tuple:
-    """Credit the agent's balance from a successful checkout session.
+    """Credit the agent's balance from a successful Stripe checkout.
+
+    Security checks (task-5):
+    1. Validate payment_status == "paid"  (Stripe is source of truth)
+    2. Cross-check metadata.amount_cents with session.amount_total
+    3. Cross-check currency with STRIPE_CURRENCY
+    4. Use topup_helpers.perform_topup (daily limit + audit + idempotency)
+    5. Idempotency via stripe_session_id (unique) + Idempotency-Key
 
     Accepts Stripe Session object OR dict.
-    Returns (success, message, transaction_or_none).
+    Returns (success: bool, message: str, transaction_or_none).
     """
-    # Convert Stripe object → dict (SDK v7+ returns objects, not dicts)
+    # ===== 1. Normalize session =====
     if not isinstance(session, dict):
         session = session.to_dict() if hasattr(session, "to_dict") else dict(session)
 
+    session_id = session.get("id")
+    if not session_id:
+        return False, "Missing session id", None
+
+    # ===== 2. Verify payment_status =====
+    payment_status = session.get("payment_status")
+    if payment_status != "paid":
+        log.warning(f"Stripe {session_id}: payment_status={payment_status}, skipping")
+        return False, f"payment_status is {payment_status}, not paid", None
+
+    # ===== 3. Verify amount_total (source of truth) =====
+    session_amount_total = session.get("amount_total")
+    session_currency = (session.get("currency") or "").lower()
+
+    if not isinstance(session_amount_total, int) or session_amount_total <= 0:
+        return False, "Invalid session amount_total", None
+
+    if session_currency != STRIPE_CURRENCY.lower():
+        return False, f"Currency mismatch: {session_currency} != {STRIPE_CURRENCY}", None
+
+    # ===== 4. Cross-check metadata =====
     metadata = session.get("metadata") or {}
     agent_id = metadata.get("agent_id")
     amount_str = metadata.get("amount_cents")
 
     if not agent_id or not amount_str:
-        return False, "Missing metadata", None
+        return False, "Missing metadata (agent_id/amount_cents)", None
 
     try:
-        amount_cents = int(amount_str)
-    except ValueError:
-        return False, "Invalid amount", None
+        meta_amount = int(amount_str)
+    except (ValueError, TypeError):
+        return False, f"Invalid metadata amount: {amount_str}", None
 
-    # Idempotency: check if this session was already credited
-    session_id = session.get("id")
-    existing = Transaction.query.filter_by(
-        description=f"Stripe:{session_id}"
-    ).first()
-    if existing:
-        return True, "Already credited", existing
+    # Critical: metadata must match Stripe's source of truth
+    if meta_amount != session_amount_total:
+        log.error(
+            f"Stripe {session_id}: metadata amount ({meta_amount}) "
+            f"!= session.amount_total ({session_amount_total})"
+        )
+        return False, "Metadata amount does not match paid amount", None
 
-    agent = db.session.get(Agent, agent_id)
-    if not agent:
-        return False, f"Agent {agent_id} not found", None
+    # ===== 5. Call topup_helpers (single source of truth for balance) =====
+    try:
+        import topup_helpers
+        result = topup_helpers.perform_topup(
+            agent_id=agent_id,
+            amount_cents=session_amount_total,
+            source="stripe",
+            currency=session_currency.upper(),
+            actor_user=None,
+            actor_email=None,
+            reason=f"Stripe checkout {session_id[:20]}",
+            idempotency_key=f"stripe:{session_id}",
+            stripe_session_id=session_id,
+        )
+    except Exception as e:
+        log.exception(f"Stripe {session_id}: topup_helpers failed: {e}")
+        return False, f"Internal error: {e}", None
 
-    agent.balance += amount_cents
-    tx = Transaction(
-        agent_id=agent.id,
-        type="topup",
-        amount=amount_cents,
-        description=f"Stripe:{session_id}",
+    if not result.get("ok"):
+        if result.get("replay"):
+            log.info(f"Stripe {session_id}: already credited (replay)")
+            return True, "Already credited", None
+        log.warning(f"Stripe {session_id}: topup rejected: {result.get('error')}")
+        return False, result.get("error", "topup rejected"), None
+
+    log.info(
+        f"Stripe {session_id}: credited agent {agent_id} "
+        f"with {session_amount_total} cents ({session_currency})"
     )
-    db.session.add(tx)
-    db.session.commit()
-    log.info(f"Credited agent {agent_id} with {amount_cents} cents (Stripe)")
-    return True, "Credited", tx
+    return True, "Credited", result.get("transaction")
+

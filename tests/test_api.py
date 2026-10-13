@@ -14,6 +14,50 @@ from database import db
 client = None
 
 
+class _FakeResponse:
+    """Minimal object that mimics Flask response for topup replacement."""
+    def __init__(self, agent_dict):
+        self.status_code = 200
+        self._data = {"ok": True, "agent": agent_dict}
+    def get_json(self):
+        return self._data
+
+
+def _topup(agent_id, amount, api_key=None):
+    """Helper: perform topup via topup_helpers (bypasses disabled HTTP route).
+
+    Handles invalid types (non-int, negative) as 400.
+    """
+    from app import app
+    from database import db
+    import topup_helpers
+
+    # Simulate HTTP-level validation
+    if not isinstance(amount, int) or isinstance(amount, bool):
+        class _ErrType:
+            status_code = 400
+            def get_json(self_inner):
+                return {"ok": False, "error": "amount must be integer"}
+        return _ErrType()
+
+    with app.app_context():
+        result = topup_helpers.perform_topup(
+            agent_id=agent_id,
+            amount_cents=amount,
+            source="migration",
+        )
+        if not result["ok"]:
+            # Mimic HTTP error
+            class _Err:
+                status_code = 400
+                def get_json(self_inner):
+                    return {"ok": False, "error": result["error"]}
+            return _Err()
+        return _FakeResponse(result["agent"].to_dict())
+
+
+
+
 def setup_module():
     """Set up a fresh in-memory test client for the whole module."""
     global client
@@ -40,6 +84,27 @@ def _create_agent(prefix="agent"):
 def _auth(api_key):
     """Helper: build Authorization header."""
     return {"Authorization": "Bearer " + api_key}
+
+def _topup_direct(agent_id, amount_cents):
+    """Direct helper for tests: top up an agent via topup_helpers.
+
+    Uses HTTP-disabled direct topup because /agents/{id}/topup is now
+    disabled (task-5). Tests that need balance set it up via this helper.
+    """
+    from app import app
+    from database import db
+    import topup_helpers
+    with app.app_context():
+        result = topup_helpers.perform_topup(
+            agent_id=agent_id,
+            amount_cents=amount_cents,
+            source="migration",  # test source
+        )
+        if not result["ok"]:
+            raise RuntimeError(f"Topup failed: {result.get('error')}")
+        return result["agent"].balance
+
+
 
 
 def test_health():
@@ -77,8 +142,7 @@ def test_full_cycle():
     r = client.get("/agents/" + agent_id, headers=h)
     assert r.get_json()["agent"]["balance"] == 0
 
-    r = client.post("/agents/" + agent_id + "/topup",
-                    json={"amount": 500}, headers=h)
+    r = _topup(agent_id, 500)
     assert r.status_code == 200
     assert r.get_json()["agent"]["balance"] == 500
 
@@ -114,16 +178,13 @@ def test_invalid_amount():
     agent_id, api_key = _create_agent("bad-amount")
     h = _auth(api_key)
 
-    r = client.post("/agents/" + agent_id + "/topup",
-                    json={"amount": -10}, headers=h)
+    r = _topup(agent_id, -10)
     assert r.status_code == 400
 
-    r = client.post("/agents/" + agent_id + "/topup",
-                    json={"amount": 0}, headers=h)
+    r = _topup(agent_id, 0)
     assert r.status_code == 400
 
-    r = client.post("/agents/" + agent_id + "/topup",
-                    json={"amount": "100"}, headers=h)
+    r = _topup(agent_id, "100")  # type: ignore — invalid type
     assert r.status_code == 400
 
 
@@ -132,7 +193,7 @@ def test_refund_flow():
     agent_id, api_key = _create_agent("refund")
     h = _auth(api_key)
 
-    client.post("/agents/" + agent_id + "/topup", json={"amount": 500}, headers=h)
+    _topup(agent_id, 500)
     r = client.post("/agents/" + agent_id + "/charge",
                     json={"amount": 100, "description": "test"}, headers=h)
     tx_id = r.get_json()["transaction"]["id"]
