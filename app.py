@@ -14,6 +14,7 @@ import auth
 import csrf
 import audit
 import topup_helpers
+import crypto
 
 app = Flask(__name__)
 
@@ -230,7 +231,11 @@ def create_agent():
     from models import SUPPORTED_CURRENCIES
     if currency not in SUPPORTED_CURRENCIES:
         return error(f"Unsupported currency. Choose from: {SUPPORTED_CURRENCIES}")
-    agent = Agent(name=name, webhook_url=webhook_url, currency=currency)
+    agent = Agent(
+        name=name,
+        webhook_url=crypto.encrypt_webhook_url(webhook_url),
+        currency=currency,
+    )
     # If logged in, attach ownership automatically
     owner = auth.attach_owner_if_logged_in(agent)
     db.session.add(agent)
@@ -429,7 +434,7 @@ def me_create_agent():
 
     agent = Agent(
         name=name,
-        webhook_url=webhook_url,
+        webhook_url=crypto.encrypt_webhook_url(webhook_url),
         currency=currency,
         owner_id=user.id,  # always from session, never from body
     )
@@ -515,6 +520,49 @@ def claim_agent(agent_id):
     )
     db.session.commit()
     return success({"agent": agent.to_dict()})
+
+
+
+@app.route("/agents/<agent_id>/rotate-key", methods=["POST"])
+@csrf.require_csrf
+@auth.require_agent_owner
+@limit(key_ip, "topup")
+def rotate_agent_key(agent_id):
+    """Rotate an agent's API key.
+
+    Requirements:
+    - Authenticated owner (session) OR admin
+    - CSRF token (session-based)
+    - Old key is invalidated immediately
+
+    Response includes new api_key (shown once).
+    """
+    agent = request.current_agent
+
+    from models import generate_api_key
+    import time as _time
+    old_key_prefix = agent.api_key[:10] + "..."
+
+    agent.api_key = generate_api_key()
+    agent.updated_at = int(_time.time())
+
+    actor_user = getattr(request, "current_user", None)
+    audit.write_audit_secure(
+        "agent.rotate_key",
+        agent_id=agent.id,
+        user_id=actor_user.id if actor_user else None,
+        actor=actor_user.email if actor_user else "unknown",
+        ip=request.remote_addr,
+        user_agent=request.headers.get("User-Agent", "")[:200],
+        old_key_prefix=old_key_prefix,
+    )
+    db.session.commit()
+
+    return success({
+        "agent": agent.to_dict(),
+        "api_key": agent.api_key,
+        "warning": "Old key is now invalid. Save the new key.",
+    })
 
 
 # ===== Auth API (users + sessions) =====

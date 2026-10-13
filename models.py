@@ -146,7 +146,7 @@ class Agent(db.Model):
             "balance": self.balance,
             "currency": self.currency,
             "balance_display": format_balance(self.balance, self.currency),
-            "webhook_url": self.webhook_url,
+            "webhook_url": _safe_decrypt_webhook(self.webhook_url),
             "created_at": self.created_at,
         }
 
@@ -383,6 +383,20 @@ class DailyTopupCounter(db.Model):
             "day": self.day,
             "total_cents": self.total_cents,
         }
+
+def _safe_decrypt_webhook(value):
+    """Decrypt webhook_url if encrypted; pass through otherwise.
+
+    Handles legacy un-encrypted values gracefully.
+    """
+    if value is None:
+        return None
+    try:
+        import crypto
+        return crypto.decrypt_webhook_url(value)
+    except Exception:
+        # If decryption fails, return None (don't leak ciphertext)
+        return None
 
 # Sensitive fields that must NEVER be stored in audit metadata
 _AUDIT_SENSITIVE_KEYS = {

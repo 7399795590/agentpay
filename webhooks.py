@@ -7,6 +7,7 @@ import threading
 import time
 import urllib.request
 import urllib.error
+import crypto  # for webhook_url decryption
 
 
 MAX_RETRIES = 3
@@ -92,4 +93,8 @@ def fire_webhook(agent, event: str, transaction=None) -> None:
             "amount_display": f"{abs(transaction.amount) / 100:.2f}",
             "description": transaction.description,
         }
-    _fire_async(agent.webhook_url, payload)
+    # Decrypt webhook_url before sending
+    plain_url = crypto.decrypt_webhook_url(agent.webhook_url)
+    if not plain_url:
+        return  # no webhook configured or decryption failed
+    _fire_async(plain_url, payload)
