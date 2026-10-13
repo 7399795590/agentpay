@@ -6,8 +6,10 @@ Supports:
 """
 import os
 from flask_sqlalchemy import SQLAlchemy
+from flask_migrate import Migrate
 
 db = SQLAlchemy()
+migrate = Migrate()
 
 
 def get_database_url():
@@ -30,5 +32,10 @@ def init_db(app):
         "pool_recycle": 300,
     }
     db.init_app(app)
-    with app.app_context():
-        db.create_all()
+    migrate.init_app(app, db)
+
+    # In tests, still auto-create tables (no migration state).
+    # In production, use `flask db upgrade` to apply migrations.
+    if app.config.get("TESTING") or os.environ.get("AUTO_CREATE_TABLES", "0") == "1":
+        with app.app_context():
+            db.create_all()
