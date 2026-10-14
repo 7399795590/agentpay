@@ -460,3 +460,80 @@ def write_audit(action, agent_id=None, user_id=None, actor=None, ip=None, user_a
     # Note: does NOT commit — caller commits with their transaction
     return entry
 
+
+# ═══════════════════════════════════════════════════════
+# Password Reset & Email Verification Tokens (Tasks 17+18)
+# ═══════════════════════════════════════════════════════
+
+class PasswordResetToken(db.Model):
+    """Single-use token for password reset.
+
+    Security:
+    - Token is hashed (SHA-256) before storage — raw token never persisted.
+    - Expires in 1 hour.
+    - Marked used_at after consumption (prevents replay).
+    - user_id + ip + user_agent logged for audit.
+    """
+    __tablename__ = "password_reset_tokens"
+
+    id = db.Column(db.String(32), primary_key=True, default=lambda: secrets.token_hex(8))
+    user_id = db.Column(db.String(32), db.ForeignKey("users.id"), nullable=False, index=True)
+    token_hash = db.Column(db.String(128), nullable=False, unique=True, index=True)
+    created_at = db.Column(db.Integer, default=lambda: int(time.time()), nullable=False)
+    expires_at = db.Column(db.Integer, nullable=False, index=True)
+    used_at = db.Column(db.Integer, nullable=True)
+    ip = db.Column(db.String(45), nullable=True)
+    user_agent = db.Column(db.String(255), nullable=True)
+
+    def is_valid(self) -> bool:
+        if self.used_at is not None:
+            return False
+        return self.expires_at > int(time.time())
+
+    def to_dict(self) -> dict:
+        return {
+            "id": self.id,
+            "user_id": self.user_id,
+            "created_at": self.created_at,
+            "expires_at": self.expires_at,
+            "used_at": self.used_at,
+            "is_valid": self.is_valid(),
+        }
+
+
+class EmailVerificationToken(db.Model):
+    """Single-use token for email verification.
+
+    Security:
+    - Token is hashed (SHA-256) before storage.
+    - Expires in 24 hours.
+    - Marked used_at after consumption.
+    """
+    __tablename__ = "email_verification_tokens"
+
+    id = db.Column(db.String(32), primary_key=True, default=lambda: secrets.token_hex(8))
+    user_id = db.Column(db.String(32), db.ForeignKey("users.id"), nullable=False, index=True)
+    email = db.Column(db.String(255), nullable=False)   # email being verified
+    token_hash = db.Column(db.String(128), nullable=False, unique=True, index=True)
+    created_at = db.Column(db.Integer, default=lambda: int(time.time()), nullable=False)
+    expires_at = db.Column(db.Integer, nullable=False, index=True)
+    used_at = db.Column(db.Integer, nullable=True)
+    ip = db.Column(db.String(45), nullable=True)
+    user_agent = db.Column(db.String(255), nullable=True)
+
+    def is_valid(self) -> bool:
+        if self.used_at is not None:
+            return False
+        return self.expires_at > int(time.time())
+
+    def to_dict(self) -> dict:
+        return {
+            "id": self.id,
+            "user_id": self.user_id,
+            "email": self.email,
+            "created_at": self.created_at,
+            "expires_at": self.expires_at,
+            "used_at": self.used_at,
+            "is_valid": self.is_valid(),
+        }
+

@@ -311,3 +311,80 @@ def reset_failed_logins(user: User):
     user.locked_until = None
     user.last_login_at = int(time.time())
     db.session.commit()
+
+
+# ═══════════════════════════════════════════════════════
+# Password Reset & Email Verification Helpers (Tasks 17+18)
+# ═══════════════════════════════════════════════════════
+
+import hashlib as _hashlib
+from models import PasswordResetToken, EmailVerificationToken
+
+
+def _hash_token(raw_token: str) -> str:
+    """SHA-256 hash of a raw token (hex). Tokens are never stored in plaintext."""
+    return _hashlib.sha256(raw_token.encode('utf-8')).hexdigest()
+
+
+def generate_reset_token(user_id: str, ip: str = None, user_agent: str = None) -> str:
+    """Create a new password reset token for a user.
+
+    Returns the RAW token (to be emailed). The hash is stored in DB.
+    Expires in 1 hour.
+    """
+    raw = secrets.token_urlsafe(32)
+    token = PasswordResetToken(
+        user_id=user_id,
+        token_hash=_hash_token(raw),
+        expires_at=int(time.time()) + 3600,   # 1 hour
+        ip=ip,
+        user_agent=(user_agent or "")[:255],
+    )
+    db.session.add(token)
+    db.session.commit()
+    return raw
+
+
+def consume_reset_token(raw_token: str) -> PasswordResetToken:
+    """Look up a password reset token by raw value. Returns the token if valid, else None.
+
+    Does NOT mark it as used — caller must do that after successful reset.
+    """
+    if not raw_token:
+        return None
+    token = PasswordResetToken.query.filter_by(token_hash=_hash_token(raw_token)).first()
+    if not token or not token.is_valid():
+        return None
+    return token
+
+
+def generate_verification_token(user_id: str, email: str, ip: str = None, user_agent: str = None) -> str:
+    """Create a new email verification token.
+
+    Returns the RAW token (to be emailed). Expires in 24 hours.
+    """
+    raw = secrets.token_urlsafe(32)
+    token = EmailVerificationToken(
+        user_id=user_id,
+        email=email.lower().strip(),
+        token_hash=_hash_token(raw),
+        expires_at=int(time.time()) + 86400,   # 24 hours
+        ip=ip,
+        user_agent=(user_agent or "")[:255],
+    )
+    db.session.add(token)
+    db.session.commit()
+    return raw
+
+
+def consume_verification_token(raw_token: str) -> EmailVerificationToken:
+    """Look up an email verification token. Returns token if valid, else None.
+
+    Does NOT mark as used — caller must do that after verification.
+    """
+    if not raw_token:
+        return None
+    token = EmailVerificationToken.query.filter_by(token_hash=_hash_token(raw_token)).first()
+    if not token or not token.is_valid():
+        return None
+    return token
