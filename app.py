@@ -1813,9 +1813,10 @@ def admin_audit_reconcile_agent(agent_id):
 
     result = ledger.reconcile_agent(agent)
 
+    actor_user = getattr(request, "current_user", None)
     audit.write_audit_secure(
         "admin.audit.reconcile",
-        user_id=request.current_user.id if hasattr(request, "current_user") else None,
+        user_id=actor_user.id if actor_user else None,
         ip=request.remote_addr,
         user_agent=request.headers.get("User-Agent", "")[:200],
         agent_id=agent.id,
@@ -1833,9 +1834,10 @@ def admin_audit_reconcile_all():
     """Reconcile all agents. Returns summary + list of mismatches."""
     result = ledger.reconcile_all()
 
+    actor_user = getattr(request, "current_user", None)
     audit.write_audit_secure(
         "admin.audit.reconcile_all",
-        user_id=request.current_user.id if hasattr(request, "current_user") else None,
+        user_id=actor_user.id if actor_user else None,
         ip=request.remote_addr,
         user_agent=request.headers.get("User-Agent", "")[:200],
         total=result["total_agents"],
