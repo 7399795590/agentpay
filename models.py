@@ -575,3 +575,30 @@ class HealthCheck(db.Model):
             "latency_ms": self.latency_ms,
             "created_at": self.created_at,
         }
+
+
+# ═══════════════════════════════════════════════════════
+# Rate Limiting (DB-backed, multi-worker safe)
+# ═══════════════════════════════════════════════════════
+
+class RateLimitBucket(db.Model):
+    """Sliding-window rate limit bucket (one row per key).
+
+    Stores a comma-separated list of recent request timestamps.
+    Replaces the in-memory ratelimit.py implementation for production,
+    so limits are shared across all gunicorn workers and instances.
+
+    Uses atomic SELECT ... FOR UPDATE to prevent race conditions.
+    """
+    __tablename__ = "rate_limit_buckets"
+
+    key = db.Column(db.String(200), primary_key=True)
+    timestamps = db.Column(db.Text, nullable=False, default="")  # comma-separated floats
+    updated_at = db.Column(db.Integer, default=lambda: int(time.time()), nullable=False)
+
+    __table_args__ = (
+        db.Index("ix_rate_limit_updated", "updated_at"),
+    )
+
+    def __repr__(self):
+        return f"<RateLimitBucket {self.key[:40]}>"

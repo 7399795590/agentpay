@@ -1274,6 +1274,7 @@ def auth_reset_password():
 
 @app.route("/auth/verify-email/send", methods=["POST"])
 @auth.require_write
+@limit(key_ip, "create")  # Task-9 audit: prevent email spam (5/min per IP)
 def auth_verify_email_send():
     """Send a verification email to the current user."""
     user = request.current_user
