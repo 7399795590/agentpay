@@ -537,3 +537,7 @@ class EmailVerificationToken(db.Model):
             "is_valid": self.is_valid(),
         }
 
+# ═══════════════════════════════════════════════════════
+# Ledger (re-exported from ledger.py for migrations/discovery)
+# ═══════════════════════════════════════════════════════
+from ledger import LedgerEntry  # noqa: F401, E402

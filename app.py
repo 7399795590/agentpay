@@ -17,6 +17,7 @@ import topup_helpers
 import crypto
 import totp
 import mailer
+import ledger
 
 app = Flask(__name__)
 
@@ -1744,6 +1745,88 @@ def admin_audit_checkpoint():
 
 
 # ===== Refunds =====
+
+
+# ═══════════════════════════════════════════════════════
+# Ledger & Reconciliation (Tasks 61 + 70)
+# ═══════════════════════════════════════════════════════
+
+@app.route("/admin/ledger/<agent_id>")
+@require_admin
+def admin_ledger_list(agent_id):
+    """List ledger entries for an agent (admin). Newest first, paginated."""
+    agent = db.session.get(Agent, agent_id)
+    if not agent:
+        return error("Agent not found", 404)
+
+    limit = min(int(request.args.get("limit", 100)), 500)
+    offset = int(request.args.get("offset", 0))
+    entry_type = request.args.get("type")
+
+    q = ledger.LedgerEntry.query.filter_by(agent_id=agent.id)
+    if entry_type:
+        q = q.filter_by(type=entry_type)
+    q = q.order_by(ledger.LedgerEntry.created_at.desc(), ledger.LedgerEntry.id.desc())
+
+    total = q.count()
+    entries = q.limit(limit).offset(offset).all()
+
+    return success({
+        "agent_id": agent.id,
+        "balance": agent.balance,
+        "total_entries": total,
+        "limit": limit,
+        "offset": offset,
+        "entries": [e.to_dict() for e in entries],
+    })
+
+
+@app.route("/admin/audit/reconcile/<agent_id>", methods=["POST"])
+@require_admin
+def admin_audit_reconcile_agent(agent_id):
+    """Reconcile one agent: verify balance == sum(ledger entries)."""
+    agent = db.session.get(Agent, agent_id)
+    if not agent:
+        return error("Agent not found", 404)
+
+    result = ledger.reconcile_agent(agent)
+
+    audit.write_audit_secure(
+        "admin.audit.reconcile",
+        user_id=request.current_user.id if hasattr(request, "current_user") else None,
+        ip=request.remote_addr,
+        user_agent=request.headers.get("User-Agent", "")[:200],
+        agent_id=agent.id,
+        matches=result["matches"],
+        discrepancy=result["discrepancy"],
+    )
+    db.session.commit()
+
+    return success({"reconciliation": result})
+
+
+@app.route("/admin/audit/reconcile-all", methods=["POST"])
+@require_admin
+def admin_audit_reconcile_all():
+    """Reconcile all agents. Returns summary + list of mismatches."""
+    result = ledger.reconcile_all()
+
+    audit.write_audit_secure(
+        "admin.audit.reconcile_all",
+        user_id=request.current_user.id if hasattr(request, "current_user") else None,
+        ip=request.remote_addr,
+        user_agent=request.headers.get("User-Agent", "")[:200],
+        total=result["total_agents"],
+        matched=result["matched"],
+        mismatched=result["mismatched"],
+    )
+    db.session.commit()
+
+    return success({"summary": {
+        "total_agents": result["total_agents"],
+        "matched": result["matched"],
+        "mismatched": result["mismatched"],
+    }, "mismatches": result["mismatches"]})
 
 @app.route("/agents/<agent_id>/refund", methods=["POST"])
 @limit(key_agent, "topup")
