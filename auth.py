@@ -176,6 +176,22 @@ def require_role(*allowed_roles):
     return decorator
 
 
+def require_write(view_func):
+    """Decorator: require an authenticated user that can perform writes.
+
+    Blocks the 'viewer' role — viewers are read-only.
+    Admins and developers can write.
+    """
+    @wraps(view_func)
+    @require_user
+    def wrapper(*args, **kwargs):
+        user = request.current_user
+        if user.role == "viewer":
+            return error("Viewer role cannot perform this action", 403)
+        return view_func(*args, **kwargs)
+    return wrapper
+
+
 
 # ===== Agent ownership =====
 

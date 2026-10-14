@@ -764,7 +764,7 @@ def auth_me():
 
 
 @app.route("/auth/logout-all", methods=["POST"])
-@auth.require_user
+@auth.require_write
 def auth_logout_all():
     """Revoke all sessions except the current one."""
     user = request.current_user
@@ -783,7 +783,7 @@ def auth_logout_all():
 
 @app.route("/auth/change-password", methods=["POST"])
 @csrf.require_csrf
-@auth.require_user
+@auth.require_write
 def auth_change_password():
     """Change the current user's password.
 
@@ -838,7 +838,7 @@ def auth_change_password():
 
 @app.route("/auth/change-email", methods=["POST"])
 @csrf.require_csrf
-@auth.require_user
+@auth.require_write
 def auth_change_email():
     """Change the current user's email.
 
@@ -954,7 +954,7 @@ def auth_2fa_status():
 
 
 @app.route("/auth/2fa/setup", methods=["POST"])
-@auth.require_user
+@auth.require_write
 def auth_2fa_setup():
     """Generate a new TOTP secret + provisioning URI + QR data URL.
 
@@ -992,7 +992,7 @@ def auth_2fa_setup():
 
 
 @app.route("/auth/2fa/enable", methods=["POST"])
-@auth.require_user
+@auth.require_write
 def auth_2fa_enable():
     """Enable 2FA after verifying a TOTP code against the pending secret.
 
@@ -1043,7 +1043,7 @@ def auth_2fa_enable():
 
 
 @app.route("/auth/2fa/disable", methods=["POST"])
-@auth.require_user
+@auth.require_write
 def auth_2fa_disable():
     """Disable 2FA. Requires password + current TOTP code (or recovery code)."""
     user = request.current_user
@@ -1088,7 +1088,7 @@ def auth_2fa_disable():
 
 
 @app.route("/auth/2fa/recovery/regenerate", methods=["POST"])
-@auth.require_user
+@auth.require_write
 def auth_2fa_recovery_regenerate():
     """Regenerate recovery codes. Requires password + current TOTP code."""
     user = request.current_user
@@ -1227,7 +1227,7 @@ def auth_reset_password():
 # ═══════════════════════════════════════════════════════
 
 @app.route("/auth/verify-email/send", methods=["POST"])
-@auth.require_user
+@auth.require_write
 def auth_verify_email_send():
     """Send a verification email to the current user."""
     user = request.current_user
