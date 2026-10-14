@@ -119,6 +119,19 @@ def find_agent(agent_id):
     return db.session.get(Agent, agent_id)
 
 
+def find_agent_for_update(agent_id):
+    """Get an agent with a row lock (PostgreSQL) for atomic balance updates.
+
+    Prevents concurrent charge/refund races (double-spend protection).
+    On SQLite (dev/test), returns the agent without a lock — SQLite
+    serializes writes at the database level.
+    """
+    drivername = db.engine.url.drivername
+    if drivername.startswith("postgresql"):
+        return Agent.query.filter_by(id=agent_id).with_for_update().first()
+    return db.session.get(Agent, agent_id)
+
+
 def require_api_key(view_func):
     """Decorator: verifies Bearer token matches the agent in the URL."""
     from functools import wraps
@@ -309,13 +322,15 @@ def topup_disabled(agent_id):
 @limit(key_agent, "charge")
 @require_api_key
 def charge(agent_id):
-    agent = find_agent(agent_id)
+    # Row lock (PostgreSQL) prevents concurrent double-spend (task-6)
+    agent = find_agent_for_update(agent_id)
     if not agent:
         return error("Agent not found", 404)
     data = request.get_json(silent=True) or {}
     amount = data.get("amount")
     if not isinstance(amount, int) or amount <= 0 or amount > 1_000_000:
         return error("Invalid amount (must be positive integer in cents, max 1,000,000)")
+    # Re-read balance AFTER lock — critical for concurrency safety
     if agent.balance < amount:
         return error(f"Insufficient balance ({agent.balance} < {amount})", 402)
     agent.balance -= amount
@@ -1609,7 +1624,7 @@ def admin_delete_agent(agent_id):
 @require_admin
 def admin_set_balance(agent_id):
     """Set an agent's balance directly (admin override)."""
-    agent = find_agent(agent_id)
+    agent = find_agent_for_update(agent_id)  # Row lock (task-6)
     if not agent:
         return error("Agent not found", 404)
     data = request.get_json(silent=True) or {}
@@ -1857,7 +1872,7 @@ def admin_audit_reconcile_all():
 @require_api_key
 def refund_transaction(agent_id):
     """Refund a previous charge by creating a reverse transaction."""
-    agent = find_agent(agent_id)
+    agent = find_agent_for_update(agent_id)  # Row lock (task-6)
     if not agent:
         return error("Agent not found", 404)
     data = request.get_json(silent=True) or {}
