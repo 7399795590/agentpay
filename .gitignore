@@ -29,3 +29,6 @@ instance/
 last_agent_id.txt
 stripe_url.txt
 *.bak
+
+# Local test artifacts (secrets!)
+.test_*
