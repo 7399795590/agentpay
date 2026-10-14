@@ -121,14 +121,11 @@
     "/agents/{agent_id}/topup": {
       "post": {
         "tags": [
-          "transactions"
+          "Agents"
         ],
-        "summary": "Add balance to agent",
-        "security": [
-          {
-            "BearerAuth": []
-          }
-        ],
+        "summary": "Direct topup — DISABLED",
+        "description": "**⚠️ DEPRECATED — This endpoint is disabled for security.**\n\nAgents cannot increase their own balance. To add funds:\n\n1. **Real payments:** `POST /agents/{agent_id}/stripe/checkout` (creates a Stripe Checkout session)\n2. **Admin topup:** `POST /admin/agents/{agent_id}/topup` (requires admin auth + CSRF + Idempotency-Key + reason)\n\nThis endpoint returns `403 Forbidden` and logs the attempt.",
+        "deprecated": true,
         "parameters": [
           {
             "name": "agent_id",
@@ -139,41 +136,26 @@
             }
           }
         ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "required": [
-                  "amount"
-                ],
-                "properties": {
-                  "amount": {
-                    "type": "integer",
-                    "example": 500,
-                    "description": "USD cents"
-                  },
-                  "description": {
-                    "type": "string"
+        "responses": {
+          "403": {
+            "description": "Direct topup is disabled",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "type": "boolean",
+                      "example": false
+                    },
+                    "error": {
+                      "type": "string",
+                      "example": "Direct topup is disabled. Use POST /agents/<id>/stripe/checkout for real payments, or contact an admin."
+                    }
                   }
                 }
               }
             }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Top-up successful"
-          },
-          "401": {
-            "description": "Missing API key"
-          },
-          "403": {
-            "description": "Key mismatch"
-          },
-          "429": {
-            "description": "Rate limit (30/min per agent)"
           }
         }
       }

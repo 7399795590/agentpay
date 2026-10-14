@@ -69,6 +69,7 @@ tailwind.config = {
       <a href="#create-agent" class="nav-item block px-4 py-2 text-gray-400">Create Agent</a>
       <a href="#get-agent" class="nav-item block px-4 py-2 text-gray-400">Get Agent</a>
       <a href="#topup" class="nav-item block px-4 py-2 text-gray-400">Top Up</a>
+      <a href="#stripe-checkout" class="nav-item block px-4 py-2 text-gray-400">Stripe Checkout</a>
       <a href="#charge" class="nav-item block px-4 py-2 text-gray-400">Charge</a>
       <a href="#refund" class="nav-item block px-4 py-2 text-gray-400">Refund</a>
       <a href="#transactions" class="nav-item block px-4 py-2 text-gray-400">Transactions</a>
@@ -171,15 +172,21 @@ tailwind.config = {
   </div>
 
   <h3 class="text-xl font-semibold text-white mt-8 mb-3">Step 2 — Top up balance</h3>
+  <div class="bg-blue-900/20 border border-blue-900/50 rounded-lg p-3 mb-4">
+    <div class="text-sm text-blue-200">
+      💡 <strong>Top-up goes through Stripe or an admin.</strong>
+      Agents <strong>cannot</strong> increase their own balance directly.
+    </div>
+  </div>
   <div class="bg-gray-900 border border-gray-800 rounded-lg overflow-hidden mb-4">
     <div class="flex items-center justify-between px-4 py-2 border-b border-gray-800 bg-gray-950/50">
-      <span class="text-xs text-gray-500 font-mono">POST /agents/{id}/topup</span>
+      <span class="text-xs text-gray-500 font-mono">POST /agents/{id}/stripe/checkout</span>
       <button class="copy-btn text-xs text-gray-400 hover:text-white" onclick="copyCode(this)">📋 Copy</button>
     </div>
-    <pre class="code-scroll p-4 text-sm font-mono text-gray-300"><code>curl -X POST https://web-production-32de5.up.railway.app/agents/a1b2c3d4e5f6/topup \
+    <pre class="code-scroll p-4 text-sm font-mono text-gray-300"><code>curl -X POST https://web-production-32de5.up.railway.app/agents/a1b2c3d4e5f6/stripe/checkout \
   -H "Authorization: Bearer ap_xxxxxxxxxxxxxxxx" \
   -H "Content-Type: application/json" \
-  -d '{"amount": 1000, "currency": "USD"}'</code></pre>
+  -d '{"amount_cents": 1000, "currency": "USD"}'</code></pre>
   </div>
 
   <h3 class="text-xl font-semibold text-white mt-8 mb-3">Step 3 — Charge for a service</h3>
@@ -316,24 +323,73 @@ tailwind.config = {
   <div class="flex items-center gap-3 mb-4">
     <span class="method method-post">POST</span>
     <code class="text-lg text-white font-mono">/agents/{agent_id}/topup</code>
+    <span class="text-xs px-2 py-1 rounded bg-red-900/40 text-red-400 font-semibold">DISABLED</span>
   </div>
-  <p class="text-gray-400 mb-6">Add funds to an agent's balance. Amount in <strong class="text-white">cents</strong> (integer).</p>
 
-  <div class="bg-blue-900/20 border border-blue-900/50 rounded-lg p-3 mb-6">
-    <div class="text-sm text-blue-200">
-      💡 <strong>Amount is in cents:</strong> <code>$10.00</code> = <code>1000</code>
+  <div class="bg-red-900/20 border border-red-900/50 rounded-lg p-4 mb-6">
+    <div class="text-sm text-red-200">
+      <strong>⚠️ This endpoint is disabled.</strong>
+      Agents cannot increase their own balance. It returns <code>403 Forbidden</code> and logs the attempt.
     </div>
   </div>
 
-  <div class="bg-gray-900 border border-gray-800 rounded-lg overflow-hidden">
-    <div class="flex items-center justify-between px-4 py-2 border-b border-gray-800 bg-gray-950/50">
-      <span class="text-xs text-gray-500 font-mono">cURL</span>
-      <button class="copy-btn text-xs text-gray-400 hover:text-white" onclick="copyCode(this)">📋 Copy</button>
-    </div>
-    <pre class="code-scroll p-4 text-sm font-mono text-gray-300"><code>curl -X POST https://web-production-32de5.up.railway.app/agents/a1b2c3d4e5f6/topup \
-  -H "Authorization: Bearer ap_xxxxx" \
+  <h3 class="text-xl font-semibold text-white mb-3">How to add funds</h3>
+  <p class="text-gray-400 mb-4">There are two approved ways to add balance to an agent:</p>
+
+  <div class="space-y-4">
+    <!-- Option 1: Stripe -->
+    <div class="bg-gray-900 border border-gray-800 rounded-lg p-4">
+      <div class="flex items-center gap-2 mb-2">
+        <span class="text-lg">💳</span>
+        <span class="font-semibold text-white">Option 1 — Stripe Checkout (customer-initiated)</span>
+      </div>
+      <p class="text-sm text-gray-400 mb-3">
+        For real payments. Creates a Stripe Checkout session and credits the balance only after the webhook verifies the payment.
+      </p>
+      <div class="bg-gray-950 border border-gray-800 rounded-lg overflow-hidden">
+        <div class="flex items-center justify-between px-4 py-2 border-b border-gray-800 bg-gray-950/50">
+          <span class="text-xs text-gray-500 font-mono">POST /agents/{agent_id}/stripe/checkout</span>
+          <button class="copy-btn text-xs text-gray-400 hover:text-white" onclick="copyCode(this)">📋 Copy</button>
+        </div>
+        <pre class="code-scroll p-4 text-sm font-mono text-gray-300"><code>curl -X POST https://web-production-32de5.up.railway.app/agents/a1b2c3d4e5f6/stripe/checkout \
+  -H "Authorization: Bearer ap_xxxxxxxxxxxxxxxx" \
   -H "Content-Type: application/json" \
-  -d '{"amount": 1000, "currency": "USD"}'</code></pre>
+  -d '{"amount_cents": 1000, "currency": "USD"}'</code></pre>
+      </div>
+    </div>
+
+    <!-- Option 2: Admin -->
+    <div class="bg-gray-900 border border-gray-800 rounded-lg p-4">
+      <div class="flex items-center gap-2 mb-2">
+        <span class="text-lg">🛡️</span>
+        <span class="font-semibold text-white">Option 2 — Admin topup (privileged)</span>
+      </div>
+      <p class="text-sm text-gray-400 mb-3">
+        Requires admin authentication + CSRF token + Idempotency-Key + reason.
+        Subject to daily limits and per-transaction limits.
+      </p>
+      <div class="bg-gray-950 border border-gray-800 rounded-lg overflow-hidden">
+        <div class="flex items-center justify-between px-4 py-2 border-b border-gray-800 bg-gray-950/50">
+          <span class="text-xs text-gray-500 font-mono">POST /admin/agents/{agent_id}/topup</span>
+          <button class="copy-btn text-xs text-gray-400 hover:text-white" onclick="copyCode(this)">📋 Copy</button>
+        </div>
+        <pre class="code-scroll p-4 text-sm font-mono text-gray-300"><code>curl -X POST https://web-production-32de5.up.railway.app/admin/agents/a1b2c3d4e5f6/topup \
+  -H "Authorization: Bearer admin_xxxxxxxxxxxx" \
+  -H "Idempotency-Key: unique-key-abc123" \
+  -H "Content-Type: application/json" \
+  -d '{"amount_cents": 1000, "currency": "USD", "reason": "Manual adjustment"}'</code></pre>
+      </div>
+    </div>
+  </div>
+
+  <div class="bg-gray-900 border border-gray-800 rounded-lg p-4 mt-6">
+    <div class="font-semibold text-white mb-2">Why direct topup is disabled</div>
+    <ul class="text-sm text-gray-400 space-y-1">
+      <li>• Prevents self-crediting without real payment</li>
+      <li>• Protects against fraud and chargebacks</li>
+      <li>• Ensures every balance change is auditable (ledger)</li>
+      <li>• Enforces daily/per-transaction limits centrally</li>
+    </ul>
   </div>
 </section>
 
