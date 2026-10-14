@@ -34,6 +34,18 @@
     {
       "name": "stripe",
       "description": "Stripe payment integration"
+    },
+    {
+      "name": "admin",
+      "description": "Administrative operations (require ADMIN_API_KEY)"
+    },
+    {
+      "name": "ledger",
+      "description": "Immutable ledger & reconciliation"
+    },
+    {
+      "name": "subscriptions",
+      "description": "Recurring billing"
     }
   ],
   "paths": {
@@ -115,7 +127,13 @@
           "404": {
             "description": "Not found"
           }
-        }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "description": "Retrieve an agent's current balance and metadata. Requires either a valid session (user is owner or admin) OR a Bearer agent API key."
       }
     },
     "/agents/{agent_id}/topup": {
@@ -321,6 +339,596 @@
           }
         }
       }
+    },
+    "/agents/{agent_id}/refund": {
+      "post": {
+        "tags": [
+          "transactions"
+        ],
+        "summary": "Refund a previous charge",
+        "description": "Refund a previous charge transaction. Protected against double-refunds (returns 409 if already refunded). The refund amount equals the original charge amount.",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "agent_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "transaction_id"
+                ],
+                "properties": {
+                  "transaction_id": {
+                    "type": "integer",
+                    "description": "ID of the original charge transaction"
+                  },
+                  "reason": {
+                    "type": "string",
+                    "maxLength": 200,
+                    "description": "Optional reason"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Refund successful"
+          },
+          "404": {
+            "description": "Transaction not found for this agent"
+          },
+          "409": {
+            "description": "Already refunded"
+          },
+          "402": {
+            "description": "Only charge transactions can be refunded"
+          }
+        }
+      }
+    },
+    "/agents/{agent_id}/subscriptions/create": {
+      "post": {
+        "tags": [
+          "subscriptions"
+        ],
+        "summary": "Create a recurring subscription",
+        "description": "Creates a recurring subscription. Intervals: daily, weekly, monthly, yearly.",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "agent_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "name",
+                  "amount",
+                  "interval"
+                ],
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "maxLength": 100
+                  },
+                  "amount": {
+                    "type": "integer",
+                    "description": "Amount in cents"
+                  },
+                  "interval": {
+                    "type": "string",
+                    "enum": [
+                      "daily",
+                      "weekly",
+                      "monthly",
+                      "yearly"
+                    ]
+                  },
+                  "description": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Subscription created"
+          }
+        }
+      }
+    },
+    "/agents/{agent_id}/subscriptions": {
+      "get": {
+        "tags": [
+          "subscriptions"
+        ],
+        "summary": "List agent subscriptions",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "agent_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of subscriptions"
+          }
+        }
+      }
+    },
+    "/agents/{agent_id}/subscriptions/{sub_id}/cancel": {
+      "post": {
+        "tags": [
+          "subscriptions"
+        ],
+        "summary": "Cancel a subscription",
+        "description": "Cancel an active subscription (soft delete).",
+        "security": [
+          {
+            "BearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "agent_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "sub_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Subscription cancelled"
+          }
+        }
+      }
+    },
+    "/admin/stats": {
+      "get": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Platform statistics",
+        "description": "Returns aggregate platform statistics (agents, balances, transactions).",
+        "security": [
+          {
+            "AdminAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Stats"
+          },
+          "401": {
+            "description": "Missing admin key"
+          },
+          "403": {
+            "description": "Wrong admin key"
+          }
+        }
+      }
+    },
+    "/admin/agents": {
+      "get": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "List all agents",
+        "security": [
+          {
+            "AdminAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of agents"
+          }
+        }
+      }
+    },
+    "/admin/agents/{agent_id}": {
+      "delete": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Delete an agent",
+        "description": "Delete an agent and all associated data.",
+        "security": [
+          {
+            "AdminAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "agent_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Deleted"
+          }
+        }
+      }
+    },
+    "/admin/agents/{agent_id}/balance": {
+      "post": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Set an agent's balance directly",
+        "description": "Set an agent's balance to a specific value. This is a privileged operation and logs a signed LedgerEntry. Balance must be a non-negative integer (cents).",
+        "security": [
+          {
+            "AdminAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "agent_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "balance"
+                ],
+                "properties": {
+                  "balance": {
+                    "type": "integer",
+                    "minimum": 0
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Balance updated"
+          }
+        }
+      }
+    },
+    "/admin/agents/{agent_id}/topup": {
+      "post": {
+        "tags": [
+          "admin",
+          "transactions"
+        ],
+        "summary": "Admin topup (privileged)",
+        "description": "Admin-only topup with strict controls:\n- Requires admin auth (Bearer <ADMIN_API_KEY>)\n- Requires X-CSRF-Token if using session auth\n- Requires Idempotency-Key header\n- Requires a reason (5-500 chars)\n- Subject to per-transaction limit ($500) and daily limit ($500)\n- Records a LedgerEntry and an audit log",
+        "security": [
+          {
+            "AdminAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "agent_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "amount_cents",
+                  "reason"
+                ],
+                "properties": {
+                  "amount_cents": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 50000
+                  },
+                  "currency": {
+                    "type": "string",
+                    "default": "USD"
+                  },
+                  "reason": {
+                    "type": "string",
+                    "minLength": 5,
+                    "maxLength": 500
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Topup successful"
+          },
+          "400": {
+            "description": "Validation failed"
+          },
+          "429": {
+            "description": "Daily limit exceeded"
+          }
+        }
+      }
+    },
+    "/admin/audit": {
+      "get": {
+        "tags": [
+          "admin"
+        ],
+        "summary": "Retrieve audit log entries",
+        "security": [
+          {
+            "AdminAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "default": 100
+            }
+          },
+          {
+            "name": "agent_id",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "action",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Audit entries"
+          }
+        }
+      }
+    },
+    "/admin/audit/verify": {
+      "get": {
+        "tags": [
+          "admin",
+          "ledger"
+        ],
+        "summary": "Verify audit hash chain",
+        "security": [
+          {
+            "AdminAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Verification result"
+          }
+        }
+      }
+    },
+    "/admin/audit/checkpoint": {
+      "get": {
+        "tags": [
+          "admin",
+          "ledger"
+        ],
+        "summary": "Get audit checkpoint",
+        "security": [
+          {
+            "AdminAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Checkpoint hash"
+          }
+        }
+      }
+    },
+    "/admin/run-billing": {
+      "post": {
+        "tags": [
+          "admin",
+          "subscriptions"
+        ],
+        "summary": "Manually trigger billing",
+        "description": "Run billing for all due subscriptions (admin).",
+        "security": [
+          {
+            "AdminAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Billing result"
+          }
+        }
+      }
+    },
+    "/admin/ledger/{agent_id}": {
+      "get": {
+        "tags": [
+          "admin",
+          "ledger"
+        ],
+        "summary": "List ledger entries for an agent",
+        "description": "Returns all LedgerEntry rows for a specific agent (paginated).",
+        "security": [
+          {
+            "AdminAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "agent_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "default": 100
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "default": 0
+            }
+          },
+          {
+            "name": "type",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Ledger entries"
+          }
+        }
+      }
+    },
+    "/admin/audit/reconcile/{agent_id}": {
+      "post": {
+        "tags": [
+          "admin",
+          "ledger"
+        ],
+        "summary": "Reconcile one agent",
+        "description": "Verify balance == sum(ledger entries) for a specific agent.",
+        "security": [
+          {
+            "AdminAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "agent_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Reconciliation result"
+          }
+        }
+      }
+    },
+    "/admin/audit/reconcile-all": {
+      "post": {
+        "tags": [
+          "admin",
+          "ledger"
+        ],
+        "summary": "Reconcile all agents",
+        "description": "Verify balance == sum(ledger entries) for every agent. Returns list of mismatches.",
+        "security": [
+          {
+            "AdminAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Reconciliation summary + mismatches"
+          }
+        }
+      }
     }
   },
   "components": {
@@ -329,6 +937,11 @@
         "type": "http",
         "scheme": "bearer",
         "description": "Use: Bearer ap_xxx... (your agent API key)"
+      },
+      "AdminAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "Admin API key. Use: Bearer <ADMIN_API_KEY>"
       }
     }
   }
