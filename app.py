@@ -1625,13 +1625,47 @@ def admin_list_agents():
 @app.route("/admin/agents/<agent_id>", methods=["DELETE"])
 @require_admin
 def admin_delete_agent(agent_id):
-    """Delete an agent and all its transactions/subscriptions."""
+    """Delete an agent and ALL its related records (cascade).
+
+    Deletes in order to satisfy FK constraints:
+    1. Ledger entries (references agents.id AND ledger_entries.id)
+    2. Topup records (references agents.id)
+    3. Daily topup counters (references agents.id)
+    4. Subscriptions (references agents.id)
+    5. Transactions (references agents.id)
+    6. Idempotency keys (not agent-scoped, but may contain agent metadata)
+    7. The agent itself
+    """
     agent = find_agent(agent_id)
     if not agent:
         return error("Agent not found", 404)
-    Subscription.query.filter_by(agent_id=agent.id).delete()
-    Transaction.query.filter_by(agent_id=agent.id).delete()
+
+    # ─── Cascade delete in FK-safe order ───
+    from models import LedgerEntry, TopupRecord, DailyTopupCounter
+
+    # 1. Ledger entries (self-FK: delete children before parents)
+    #    Simple approach: two passes (delete entries with related_entry_id first)
+    LedgerEntry.query.filter(
+        LedgerEntry.agent_id == agent.id,
+        LedgerEntry.related_entry_id.isnot(None),
+    ).delete(synchronize_session=False)
+    LedgerEntry.query.filter_by(agent_id=agent.id).delete(synchronize_session=False)
+
+    # 2. Topup records
+    TopupRecord.query.filter_by(agent_id=agent.id).delete(synchronize_session=False)
+
+    # 3. Daily topup counters
+    DailyTopupCounter.query.filter_by(agent_id=agent.id).delete(synchronize_session=False)
+
+    # 4. Subscriptions
+    Subscription.query.filter_by(agent_id=agent.id).delete(synchronize_session=False)
+
+    # 5. Transactions
+    Transaction.query.filter_by(agent_id=agent.id).delete(synchronize_session=False)
+
+    # 6. Agent
     db.session.delete(agent)
+
     audit.write_audit_secure("admin.agent.delete", agent_id=agent_id,
                 ip=request.remote_addr,
                 actor="admin")
