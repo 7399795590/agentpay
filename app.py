@@ -16,6 +16,7 @@ import audit
 import topup_helpers
 import crypto
 import totp
+import mailer
 
 app = Flask(__name__)
 
@@ -1121,6 +1122,179 @@ def auth_2fa_recovery_regenerate():
         "recovery_codes": plaintext_codes,
         "warning": "Old recovery codes are now invalid.",
     })
+
+
+# ═══════════════════════════════════════════════════════
+# Password Reset Endpoints (Task 17)
+# ═══════════════════════════════════════════════════════
+
+@app.route("/auth/forgot-password", methods=["POST"])
+@limit(key_ip, "create")
+def auth_forgot_password():
+    """Request a password reset email. Always returns success (anti-enumeration)."""
+    data = request.get_json(silent=True) or {}
+    email = (data.get("email") or "").strip().lower()
+
+    if not email:
+        return error("Email is required")
+
+    GENERIC_OK = {"ok": True, "message": "If that email exists, a reset link has been sent."}
+
+    user = User.query.filter_by(email=email).first()
+    if not user or not user.is_active:
+        # Anti-enumeration: same response for missing/inactive users
+        audit.write_audit_secure(
+            "auth.password.forgot.unknown",
+            actor=email,
+            ip=request.remote_addr,
+            user_agent=request.headers.get("User-Agent", "")[:200],
+            status="noop",
+        )
+        db.session.commit()
+        return jsonify(GENERIC_OK)
+
+    token = auth.generate_reset_token(
+        user.id,
+        ip=request.remote_addr,
+        user_agent=request.headers.get("User-Agent", "")[:200],
+    )
+    sent = mailer.send_password_reset(user.email, token)
+
+    audit.write_audit_secure(
+        "auth.password.forgot",
+        user_id=user.id,
+        actor=email,
+        ip=request.remote_addr,
+        user_agent=request.headers.get("User-Agent", "")[:200],
+        email_sent=sent,
+    )
+    db.session.commit()
+
+    return jsonify(GENERIC_OK)
+
+
+@app.route("/auth/reset-password", methods=["POST"])
+@limit(key_ip, "create")
+def auth_reset_password():
+    """Reset password using a valid token. Marks token as used."""
+    data = request.get_json(silent=True) or {}
+    raw_token = (data.get("token") or "").strip()
+    new_password = data.get("password") or ""
+
+    if not raw_token:
+        return error("Token is required")
+
+    if len(new_password) < 8:
+        return error("Password must be at least 8 characters")
+
+    token = auth.consume_reset_token(raw_token)
+    if not token:
+        audit.write_audit_secure(
+            "auth.password.reset.invalid",
+            ip=request.remote_addr,
+            user_agent=request.headers.get("User-Agent", "")[:200],
+            status="error",
+        )
+        db.session.commit()
+        return error("Invalid or expired token", 400)
+
+    user = db.session.get(User, token.user_id)
+    if not user or not user.is_active:
+        return error("Invalid or expired token", 400)
+
+    # Update password
+    user.password_hash = auth.hash_password(new_password)
+    token.used_at = int(time.time())
+
+    # Revoke all existing sessions (security)
+    auth.revoke_all_user_sessions(user.id)
+
+    audit.write_audit_secure(
+        "auth.password.reset",
+        user_id=user.id,
+        actor=user.email,
+        ip=request.remote_addr,
+        user_agent=request.headers.get("User-Agent", "")[:200],
+        sessions_revoked=True,
+    )
+    db.session.commit()
+
+    return success({"message": "Password updated. Please log in again."})
+
+
+# ═══════════════════════════════════════════════════════
+# Email Verification Endpoints (Task 18)
+# ═══════════════════════════════════════════════════════
+
+@app.route("/auth/verify-email/send", methods=["POST"])
+@auth.require_user
+def auth_verify_email_send():
+    """Send a verification email to the current user."""
+    user = request.current_user
+
+    if user.email_verified:
+        return success({"message": "Email already verified", "email_verified": True})
+
+    token = auth.generate_verification_token(
+        user.id,
+        user.email,
+        ip=request.remote_addr,
+        user_agent=request.headers.get("User-Agent", "")[:200],
+    )
+    sent = mailer.send_email_verification(user.email, token)
+
+    audit.write_audit_secure(
+        "auth.email.verify.sent",
+        user_id=user.id,
+        actor=user.email,
+        ip=request.remote_addr,
+        user_agent=request.headers.get("User-Agent", "")[:200],
+        email_sent=sent,
+    )
+    db.session.commit()
+
+    return success({
+        "message": "Verification email sent" if sent else "Email service unavailable",
+        "email_sent": sent,
+    })
+
+
+@app.route("/auth/verify-email/confirm", methods=["POST"])
+@limit(key_ip, "create")
+def auth_verify_email_confirm():
+    """Confirm email verification with a valid token."""
+    data = request.get_json(silent=True) or {}
+    raw_token = (data.get("token") or "").strip()
+
+    if not raw_token:
+        return error("Token is required")
+
+    token = auth.consume_verification_token(raw_token)
+    if not token:
+        return error("Invalid or expired token", 400)
+
+    user = db.session.get(User, token.user_id)
+    if not user:
+        return error("Invalid or expired token", 400)
+
+    # Only mark verified if email still matches (user may have changed email)
+    if user.email.lower() != token.email.lower():
+        return error("Token does not match current email", 400)
+
+    user.email_verified = True
+    token.used_at = int(time.time())
+    db.session.commit()
+
+    audit.write_audit_secure(
+        "auth.email.verified",
+        user_id=user.id,
+        actor=user.email,
+        ip=request.remote_addr,
+        user_agent=request.headers.get("User-Agent", "")[:200],
+    )
+    db.session.commit()
+
+    return success({"email_verified": True, "message": "Email verified successfully"})
 
 @app.route("/admin/users")
 @auth.require_role("admin")
