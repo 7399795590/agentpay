@@ -15,6 +15,7 @@ import csrf
 import audit
 import topup_helpers
 import crypto
+import totp
 
 app = Flask(__name__)
 
@@ -660,6 +661,50 @@ def auth_login():
         db.session.commit()
         return error(GENERIC_ERR, 401)
 
+    # ─── 2FA check (Task 19) ───
+    if user.totp_enabled:
+        totp_code = (data.get("totp_code") or "").strip()
+        recovery_code = (data.get("recovery_code") or "").strip()
+
+        if not totp_code and not recovery_code:
+            audit.write_audit_secure(
+                "auth.login.2fa.required",
+                user_id=user.id,
+                actor=email,
+                ip=request.remote_addr,
+                user_agent=request.headers.get("User-Agent", "")[:200],
+                status="pending",
+            )
+            db.session.commit()
+            return jsonify({
+                "ok": False,
+                "requires_2fa": True,
+                "error": "2FA code required",
+            }), 401
+
+        verified = False
+        if totp_code:
+            if totp.verify_code(user.totp_secret, totp_code):
+                verified = True
+        elif recovery_code:
+            ok, remaining = totp.verify_recovery_code(user.recovery_codes_hash, recovery_code)
+            if ok:
+                user.recovery_codes_hash = remaining
+                verified = True
+
+        if not verified:
+            auth.record_failed_login(user)
+            audit.write_audit_secure(
+                "auth.login.2fa.fail",
+                user_id=user.id,
+                actor=email,
+                ip=request.remote_addr,
+                user_agent=request.headers.get("User-Agent", "")[:200],
+                status="error",
+            )
+            db.session.commit()
+            return error("Invalid 2FA code", 401)
+
     # Success — create session
     session = auth.create_session(
         user,
@@ -889,6 +934,193 @@ def _count_active_admins(exclude_user_id=None):
         q = q.filter(User.id != exclude_user_id)
     return q.count()
 
+
+
+# ═══════════════════════════════════════════════════════
+# 2FA / TOTP Endpoints (Task 19)
+# ═══════════════════════════════════════════════════════
+
+@app.route("/auth/2fa/status")
+@auth.require_user
+def auth_2fa_status():
+    """Return whether 2FA is enabled for the current user."""
+    user = request.current_user
+    remaining = totp.count_remaining_recovery_codes(user.recovery_codes_hash)
+    return success({
+        "totp_enabled": bool(user.totp_enabled),
+        "recovery_codes_remaining": remaining,
+    })
+
+
+@app.route("/auth/2fa/setup", methods=["POST"])
+@auth.require_user
+def auth_2fa_setup():
+    """Generate a new TOTP secret + provisioning URI + QR data URL.
+
+    Does NOT enable 2FA yet — user must verify a code first via /auth/2fa/enable.
+    The secret is stored temporarily (not activated).
+    """
+    user = request.current_user
+
+    if user.totp_enabled:
+        return error("2FA is already enabled. Disable it first.", 400)
+
+    secret = totp.generate_secret()
+    uri = totp.get_provisioning_uri(secret, user.email)
+    qr_data_url = totp.provisioning_uri_to_qr_svg_data_url(uri)
+
+    # Store secret but keep totp_enabled=False until verified
+    user.totp_secret = secret
+    db.session.commit()
+
+    audit.write_audit_secure(
+        "auth.2fa.setup",
+        user_id=user.id,
+        actor=user.email,
+        ip=request.remote_addr,
+        user_agent=request.headers.get("User-Agent", "")[:200],
+    )
+    db.session.commit()
+
+    return success({
+        "secret": secret,
+        "provisioning_uri": uri,
+        "qr_data_url": qr_data_url,
+        "instructions": "Scan the QR with Google Authenticator, then POST a code to /auth/2fa/enable",
+    })
+
+
+@app.route("/auth/2fa/enable", methods=["POST"])
+@auth.require_user
+def auth_2fa_enable():
+    """Enable 2FA after verifying a TOTP code against the pending secret.
+
+    Returns 10 recovery codes (plaintext — shown ONCE).
+    """
+    user = request.current_user
+
+    if user.totp_enabled:
+        return error("2FA is already enabled", 400)
+
+    if not user.totp_secret:
+        return error("No pending 2FA secret. Call /auth/2fa/setup first.", 400)
+
+    data = request.get_json(silent=True) or {}
+    code = (data.get("code") or "").strip()
+
+    if not totp.verify_code(user.totp_secret, code):
+        audit.write_audit_secure(
+            "auth.2fa.enable.fail",
+            user_id=user.id,
+            actor=user.email,
+            ip=request.remote_addr,
+            status="error",
+        )
+        db.session.commit()
+        return error("Invalid TOTP code", 401)
+
+    # Generate + hash recovery codes
+    plaintext_codes = totp.generate_recovery_codes()
+    user.recovery_codes_hash = totp.hash_recovery_codes(plaintext_codes)
+    user.totp_enabled = True
+    db.session.commit()
+
+    audit.write_audit_secure(
+        "auth.2fa.enabled",
+        user_id=user.id,
+        actor=user.email,
+        ip=request.remote_addr,
+        user_agent=request.headers.get("User-Agent", "")[:200],
+    )
+    db.session.commit()
+
+    return success({
+        "totp_enabled": True,
+        "recovery_codes": plaintext_codes,
+        "warning": "Save these recovery codes now. They will NOT be shown again.",
+    })
+
+
+@app.route("/auth/2fa/disable", methods=["POST"])
+@auth.require_user
+def auth_2fa_disable():
+    """Disable 2FA. Requires password + current TOTP code (or recovery code)."""
+    user = request.current_user
+
+    if not user.totp_enabled:
+        return error("2FA is not enabled", 400)
+
+    data = request.get_json(silent=True) or {}
+    password = data.get("password") or ""
+    code = (data.get("code") or "").strip()
+    recovery_code = (data.get("recovery_code") or "").strip()
+
+    if not auth.verify_password(password, user.password_hash):
+        return error("Invalid password", 401)
+
+    verified = False
+    if code and totp.verify_code(user.totp_secret, code):
+        verified = True
+    elif recovery_code:
+        ok, _ = totp.verify_recovery_code(user.recovery_codes_hash, recovery_code)
+        if ok:
+            verified = True
+
+    if not verified:
+        return error("Invalid 2FA code or recovery code", 401)
+
+    user.totp_secret = None
+    user.totp_enabled = False
+    user.recovery_codes_hash = None
+    db.session.commit()
+
+    audit.write_audit_secure(
+        "auth.2fa.disabled",
+        user_id=user.id,
+        actor=user.email,
+        ip=request.remote_addr,
+        user_agent=request.headers.get("User-Agent", "")[:200],
+    )
+    db.session.commit()
+
+    return success({"totp_enabled": False})
+
+
+@app.route("/auth/2fa/recovery/regenerate", methods=["POST"])
+@auth.require_user
+def auth_2fa_recovery_regenerate():
+    """Regenerate recovery codes. Requires password + current TOTP code."""
+    user = request.current_user
+
+    if not user.totp_enabled:
+        return error("2FA is not enabled", 400)
+
+    data = request.get_json(silent=True) or {}
+    password = data.get("password") or ""
+    code = (data.get("code") or "").strip()
+
+    if not auth.verify_password(password, user.password_hash):
+        return error("Invalid password", 401)
+
+    if not totp.verify_code(user.totp_secret, code):
+        return error("Invalid 2FA code", 401)
+
+    plaintext_codes = totp.generate_recovery_codes()
+    user.recovery_codes_hash = totp.hash_recovery_codes(plaintext_codes)
+    db.session.commit()
+
+    audit.write_audit_secure(
+        "auth.2fa.recovery.regenerated",
+        user_id=user.id,
+        actor=user.email,
+        ip=request.remote_addr,
+    )
+    db.session.commit()
+
+    return success({
+        "recovery_codes": plaintext_codes,
+        "warning": "Old recovery codes are now invalid.",
+    })
 
 @app.route("/admin/users")
 @auth.require_role("admin")
