@@ -16,6 +16,7 @@ import audit
 import topup_helpers
 import crypto
 import totp
+from sqlalchemy import update as sql_update
 import mailer
 import ledger
 
@@ -322,18 +323,36 @@ def topup_disabled(agent_id):
 @limit(key_agent, "charge")
 @require_api_key
 def charge(agent_id):
-    # Row lock (PostgreSQL) prevents concurrent double-spend (task-6)
-    agent = find_agent_for_update(agent_id)
+    agent = find_agent(agent_id)
     if not agent:
         return error("Agent not found", 404)
     data = request.get_json(silent=True) or {}
     amount = data.get("amount")
     if not isinstance(amount, int) or amount <= 0 or amount > 1_000_000:
         return error("Invalid amount (must be positive integer in cents, max 1,000,000)")
-    # Re-read balance AFTER lock — critical for concurrency safety
-    if agent.balance < amount:
-        return error(f"Insufficient balance ({agent.balance} < {amount})", 402)
-    agent.balance -= amount
+
+    # ─── Atomic conditional decrement (task-6, DB-agnostic) ───
+    # Single UPDATE with WHERE balance >= amount:
+    #   - Prevents double-spend on ALL databases (PostgreSQL + SQLite)
+    #   - No race window between check and update
+    result = db.session.execute(
+        sql_update(Agent)
+        .where(Agent.id == agent.id)
+        .where(Agent.balance >= amount)
+        .values(balance=Agent.balance - amount)
+    )
+    if result.rowcount == 0:
+        # Either agent vanished or insufficient balance
+        db.session.rollback()
+        current = db.session.get(Agent, agent.id)
+        if not current:
+            return error("Agent not found", 404)
+        return error(f"Insufficient balance ({current.balance} < {amount})", 402)
+
+    # Refresh agent to get new balance
+    db.session.expire(agent)
+    agent = db.session.get(Agent, agent.id)
+
     tx = Transaction(agent_id=agent.id, type="charge", amount=amount,
                      description=data.get("description", "Charge"))
     db.session.add(tx)
