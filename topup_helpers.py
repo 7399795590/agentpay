@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Mohammed Taha Abdullah Dawood Abrah (AgentPay)
+# Licensed under the MIT License - see LICENSE file for details.
+
 """AgentPay — Topup helpers (task-5).
 
 Central logic for:
@@ -10,6 +13,7 @@ Used by:
 - /admin/agents/{id}/topup
 - stripe_integration.credit_agent_from_checkout
 """
+
 import hashlib
 import json
 import time

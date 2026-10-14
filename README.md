@@ -118,3 +118,19 @@ MIT © [@M10Crypt](https://twitter.com/M10Crypt)
 ---
 
 [الموقع](https://agentpay-pearl.vercel.app) · [التوثيق](https://agentpay-pearl.vercel.app/docs.html) · [الحالة](https://agentpay-pearl.vercel.app/status.html)
+
+---
+
+## 📄 الملكية الفكرية
+
+**حق المؤلف:** © 2026 محمد طه عبدالله داود عبره (Mohammed Taha Abdullah Dawood Abrah)
+
+**جميع الحقوق محفوظة.**
+
+- **الكود:** MIT License (انظر ملف `LICENSE`)
+- **الاسم التجاري:** AgentPay™
+- **الشعار:** ⚡ (AgentPay Brand)
+- **التصميم:** Copyrighted
+- **الأعمال المشتقة:** تتطلب إذن كتابي
+
+للترخيص التجاري: mhmdthbrh@gmail.com

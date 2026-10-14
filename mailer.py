@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Mohammed Taha Abdullah Dawood Abrah (AgentPay)
+# Licensed under the MIT License - see LICENSE file for details.
+
 """AgentPay — Email sending via Resend.
 
 Provides:
@@ -11,6 +14,7 @@ Design:
 - Uses MAIL_FROM env var (fallback: onboarding@resend.dev)
 - All emails include a plaintext version
 """
+
 import os
 import logging
 

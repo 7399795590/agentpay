@@ -1,4 +1,8 @@
+# Copyright (c) 2026 Mohammed Taha Abdullah Dawood Abrah (AgentPay)
+# Licensed under the MIT License - see LICENSE file for details.
+
 """AgentPay — Main Flask app."""
+
 import time
 from flask import Flask, request, jsonify
 from flask_cors import CORS

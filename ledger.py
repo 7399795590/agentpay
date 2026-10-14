@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Mohammed Taha Abdullah Dawood Abrah (AgentPay)
+# Licensed under the MIT License - see LICENSE file for details.
+
 """AgentPay — Ledger system (Task 61 + 64 + 65 + 70).
 
 Provides:
@@ -21,6 +24,7 @@ Types:
 - admin_adjust : ±amount (forced set by admin)
 - subscription : -amount (recurring billing)
 """
+
 import time
 import secrets
 from typing import Optional, List, Dict, Any

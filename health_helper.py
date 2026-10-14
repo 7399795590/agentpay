@@ -1,8 +1,12 @@
+# Copyright (c) 2026 Mohammed Taha Abdullah Dawood Abrah (AgentPay)
+# Licensed under the MIT License - see LICENSE file for details.
+
 """AgentPay — Health check recording & uptime computation (Task 9).
 
 Records periodic health checks into `health_checks` table.
 Provides uptime + latency percentiles for the /status page.
 """
+
 import time
 from datetime import datetime, timezone
 

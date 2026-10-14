@@ -1,8 +1,12 @@
+# Copyright (c) 2026 Mohammed Taha Abdullah Dawood Abrah (AgentPay)
+# Licensed under the MIT License - see LICENSE file for details.
+
 """AgentPay — Authentication & Authorization.
 
 Server-side sessions with secure cookies.
 Password hashing via werkzeug (scrypt).
 """
+
 import os
 import secrets
 import time

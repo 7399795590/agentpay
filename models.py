@@ -1,4 +1,8 @@
+# Copyright (c) 2026 Mohammed Taha Abdullah Dawood Abrah (AgentPay)
+# Licensed under the MIT License - see LICENSE file for details.
+
 """AgentPay — Database models."""
+
 import secrets
 import time
 from database import db

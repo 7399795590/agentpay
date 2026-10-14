@@ -1,3 +1,6 @@
+# Copyright (c) 2026 Mohammed Taha Abdullah Dawood Abrah (AgentPay)
+# Licensed under the MIT License - see LICENSE file for details.
+
 """AgentPay — TOTP (2FA) helpers.
 
 Uses pyotp for TOTP generation/verification and segno for QR code rendering.
@@ -8,6 +11,7 @@ Design principles:
 - Verification uses constant-time comparison
 - Recovery codes are hashed (bcrypt-compatible via werkzeug)
 """
+
 import io
 import json
 import secrets
