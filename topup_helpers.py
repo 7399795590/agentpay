@@ -23,6 +23,7 @@ from models import (
     IdempotencyKey,
 )
 import audit
+import ledger
 
 
 # ===== Constants =====
@@ -233,6 +234,17 @@ def perform_topup(agent_id, amount_cents, source, *,
         )
         db.session.add(tx)
         db.session.flush()
+
+        # Ledger entry (Task 61) — signed credit
+        ledger.record_entry(
+            agent,
+            entry_type="topup",
+            amount_signed=amount_cents,
+            description=desc[:255],
+            created_by_user_id=actor_user.id if actor_user else None,
+            external_ref=f"tx:{tx.id}",
+            idempotency_key=(idempotency_key + ":ledger") if idempotency_key else None,
+        )
 
         # ===== 8. TopupRecord =====
         record = TopupRecord(

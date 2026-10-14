@@ -323,6 +323,16 @@ def charge(agent_id):
                      description=data.get("description", "Charge"))
     db.session.add(tx)
     db.session.flush()
+
+    # Ledger entry (Task 61)
+    ledger.record_entry(
+        agent,
+        entry_type="charge",
+        amount_signed=-amount,
+        description=tx.description,
+        external_ref=f"tx:{tx.id}",
+    )
+
     audit.write_audit_secure("charge", agent_id=agent.id, ip=request.remote_addr,
                 user_agent=request.headers.get("User-Agent", "")[:200],
                 actor=agent.api_key[:10] + "...",
@@ -1617,6 +1627,18 @@ def admin_set_balance(agent_id):
     )
     db.session.add(tx)
     db.session.flush()
+
+    # Ledger entry (Task 61) — signed delta for admin adjustment
+    actor_user_id = request.current_user.id if hasattr(request, "current_user") and request.current_user else None
+    ledger.record_entry(
+        agent,
+        entry_type="admin_adjust",
+        amount_signed=diff,
+        description=tx.description,
+        created_by_user_id=actor_user_id,
+        external_ref=f"tx:{tx.id}",
+    )
+
     audit.write_audit_secure("admin.balance.set", agent_id=agent.id,
                 ip=request.remote_addr, actor="admin",
                 old_balance=old_balance, new_balance=new_balance,
@@ -1866,6 +1888,21 @@ def refund_transaction(agent_id):
     )
     db.session.add(refund)
     db.session.flush()  # get refund.id without committing
+
+    # Ledger entry (Task 61) — references the original charge
+    original_ledger = ledger.LedgerEntry.query.filter_by(
+        agent_id=agent.id,
+        external_ref=f"tx:{original.id}",
+    ).first()
+
+    ledger.record_entry(
+        agent,
+        entry_type="refund",
+        amount_signed=original.amount,
+        description=refund.description,
+        related_entry_id=original_ledger.id if original_ledger else None,
+        external_ref=f"tx:{refund.id}",
+    )
     audit.write_audit_secure("refund", agent_id=agent.id, ip=request.remote_addr,
                 user_agent=request.headers.get("User-Agent", "")[:200],
                 metadata={"refund_tx_id": refund.id, "original_tx_id": original.id,
@@ -2125,6 +2162,15 @@ def run_billing():
             sub.next_charge_at = now + sub.interval_seconds
             db.session.add(tx)
             db.session.flush()
+
+            # Ledger entry (Task 61) — subscription billing
+            ledger.record_entry(
+                agent,
+                entry_type="subscription",
+                amount_signed=-sub.amount,
+                description=f"Subscription: {sub.name} (#{sub.id})",
+                external_ref=f"tx:{tx.id}",
+            )
 
             audit.write_audit_secure(
                 "subscription.billing",
