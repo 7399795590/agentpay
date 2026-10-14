@@ -541,3 +541,37 @@ class EmailVerificationToken(db.Model):
 # Ledger (re-exported from ledger.py for migrations/discovery)
 # ═══════════════════════════════════════════════════════
 from ledger import LedgerEntry  # noqa: F401, E402
+
+
+# ═══════════════════════════════════════════════════════
+# Health Monitoring (Task 9)
+# ═══════════════════════════════════════════════════════
+
+class HealthCheck(db.Model):
+    """Record a single health check result.
+
+    Used to compute uptime and latency percentiles for the /status page.
+    Records are lightweight: only timestamp, ok flag, latency_ms, service.
+    Retention: keep 90 days (prune older via cron/admin endpoint).
+    """
+    __tablename__ = "health_checks"
+
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    service = db.Column(db.String(32), nullable=False, index=True, default="api")
+    ok = db.Column(db.Boolean, nullable=False, index=True)
+    latency_ms = db.Column(db.Integer, nullable=True)
+    error = db.Column(db.String(255), nullable=True)
+    created_at = db.Column(db.Integer, default=lambda: int(time.time()), nullable=False, index=True)
+
+    __table_args__ = (
+        db.Index("ix_health_service_time", "service", "created_at"),
+    )
+
+    def to_dict(self) -> dict:
+        return {
+            "id": self.id,
+            "service": self.service,
+            "ok": self.ok,
+            "latency_ms": self.latency_ms,
+            "created_at": self.created_at,
+        }

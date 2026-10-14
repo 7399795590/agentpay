@@ -19,6 +19,7 @@ import totp
 from sqlalchemy import update as sql_update
 import mailer
 import ledger
+import health_helper
 
 app = Flask(__name__)
 
@@ -1919,6 +1920,91 @@ def admin_audit_reconcile_all():
         "matched": result["matched"],
         "mismatched": result["mismatched"],
     }, "mismatches": result["mismatches"]})
+
+
+# ═══════════════════════════════════════════════════════
+# Health Monitoring Endpoints (Task 9)
+# ═══════════════════════════════════════════════════════
+
+@app.route("/admin/health/record", methods=["POST"])
+@require_admin
+def admin_health_record():
+    """Record a health check snapshot.
+
+    Can be called by:
+    - External cron (e.g. UptimeRobot, Better Stack)
+    - Internal scheduler
+    - Manual admin
+
+    Body: {"service": "api" (optional), "ok": true (default)}
+    Auto-measures latency from request start to response.
+    """
+    import time as _t
+    data = request.get_json(silent=True) or {}
+    service = (data.get("service") or "api")[:32]
+    ok = bool(data.get("ok", True))
+    latency_ms = data.get("latency_ms")
+    error_msg = data.get("error")
+
+    if latency_ms is not None and not isinstance(latency_ms, int):
+        return error("latency_ms must be an integer or null", 400)
+
+    hc = health_helper.record_health_check(
+        service=service,
+        ok=ok,
+        latency_ms=latency_ms,
+        error=error_msg,
+    )
+    db.session.commit()
+
+    return success({"recorded": hc.to_dict()})
+
+
+@app.route("/admin/health/history")
+@require_admin
+def admin_health_history():
+    """Return uptime + latency metrics for the status page.
+
+    Query params:
+    - period: 1d, 7d, 30d, 90d (default: 7d)
+    - service: api (default), db, stripe, etc.
+    """
+    period_map = {"1d": 86400, "7d": 604800, "30d": 2592000, "90d": 7776000}
+    period_str = request.args.get("period", "7d").lower()
+    period = period_map.get(period_str, period_map["7d"])
+
+    service = request.args.get("service", "api")[:32]
+
+    # Compute metrics
+    metrics = health_helper.compute_uptime(period, service=service)
+
+    # Include current state
+    current = {
+        "service": service,
+        "ok": True,
+        "checked_at": int(time.time()),
+    }
+
+    return success({
+        "current": current,
+        "metrics": metrics,
+        "period": period_str,
+    })
+
+
+@app.route("/admin/health/prune", methods=["POST"])
+@require_admin
+def admin_health_prune():
+    """Delete health checks older than N days (default: 90)."""
+    data = request.get_json(silent=True) or {}
+    days = data.get("days", 90)
+    if not isinstance(days, int) or days < 1:
+        return error("days must be a positive integer", 400)
+
+    deleted = health_helper.prune_old_checks(days)
+    db.session.commit()
+
+    return success({"deleted": deleted, "days": days})
 
 @app.route("/agents/<agent_id>/refund", methods=["POST"])
 @limit(key_agent, "topup")
