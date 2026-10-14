@@ -123,7 +123,50 @@
     </div>
     <div class="bg-gray-900 border border-gray-800 rounded-xl p-5">
       <div class="text-xs text-gray-500 mb-1">Uptime (30d)</div>
-      <div class="text-2xl font-bold text-green-400">99.9%</div>
+      <div id="metric-uptime" class="text-2xl font-bold text-green-400">—</div>
+    </div>
+  </div>
+
+  <!-- Availability (Task 9) -->
+  <div class="bg-gray-900 border border-gray-800 rounded-xl overflow-hidden mt-8">
+    <div class="px-6 py-3 border-b border-gray-800 bg-gray-950/50 flex items-center justify-between">
+      <div class="text-xs font-bold text-gray-500 uppercase tracking-wider">Availability — last 30 days</div>
+      <div id="availability-period" class="text-xs text-gray-500">loading...</div>
+    </div>
+    <div class="p-6">
+      <!-- Period selector -->
+      <div class="flex gap-2 mb-4">
+        <button class="period-btn text-xs px-3 py-1 rounded-lg border border-gray-700 text-gray-400 hover:text-white" data-period="1d">24h</button>
+        <button class="period-btn text-xs px-3 py-1 rounded-lg border border-blue-600 text-blue-400 bg-blue-900/20" data-period="7d">7d</button>
+        <button class="period-btn text-xs px-3 py-1 rounded-lg border border-gray-700 text-gray-400 hover:text-white" data-period="30d">30d</button>
+        <button class="period-btn text-xs px-3 py-1 rounded-lg border border-gray-700 text-gray-400 hover:text-white" data-period="90d">90d</button>
+      </div>
+
+      <!-- Uptime -->
+      <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+        <div class="bg-gray-950/50 border border-gray-800 rounded-lg p-4">
+          <div class="text-xs text-gray-500 mb-1">Uptime</div>
+          <div id="av-uptime" class="text-2xl font-bold text-green-400">—</div>
+        </div>
+        <div class="bg-gray-950/50 border border-gray-800 rounded-lg p-4">
+          <div class="text-xs text-gray-500 mb-1">Total checks</div>
+          <div id="av-total" class="text-2xl font-bold text-white">—</div>
+        </div>
+        <div class="bg-gray-950/50 border border-gray-800 rounded-lg p-4">
+          <div class="text-xs text-gray-500 mb-1">Failed</div>
+          <div id="av-failed" class="text-2xl font-bold text-red-400">—</div>
+        </div>
+        <div class="bg-gray-950/50 border border-gray-800 rounded-lg p-4">
+          <div class="text-xs text-gray-500 mb-1">p95 latency</div>
+          <div id="av-p95" class="text-2xl font-bold text-white">—</div>
+        </div>
+      </div>
+
+      <!-- Daily timeline -->
+      <div class="text-xs text-gray-500 mb-2">Daily uptime</div>
+      <div id="av-timeline" class="flex gap-0.5 h-12 items-end">
+        <div class="text-xs text-gray-600 py-3">Loading...</div>
+      </div>
     </div>
   </div>
 
@@ -253,6 +296,57 @@ async function refresh() {
   setOverall(api === true);
 }
 
+// ═══ Availability loader (Task 9) ═══
+async function loadAvailability(period) {
+  const API = 'https://web-production-32de5.up.railway.app';
+  const ADMIN_KEY = 'admin_secret_key_change_me_2026';
+  try {
+    const r = await fetch(API + '/admin/health/history?period=' + period, {
+      headers: { 'Authorization': 'Bearer ' + ADMIN_KEY },
+      cache: 'no-store'
+    });
+    const d = await r.json();
+    if (!d.ok) return;
+
+    const m = d.metrics;
+    document.getElementById('av-uptime').textContent = m.uptime_pct.toFixed(2) + '%';
+    document.getElementById('av-total').textContent = m.total_checks;
+    document.getElementById('av-failed').textContent = m.failed_checks;
+    document.getElementById('av-p95').textContent = (m.p95_latency_ms || '—') + ' ms';
+    document.getElementById('availability-period').textContent = 'period: ' + period;
+
+    // Update top metric
+    const upEl = document.getElementById('metric-uptime');
+    if (upEl) upEl.textContent = m.uptime_pct.toFixed(2) + '%';
+
+    // Timeline
+    const tl = document.getElementById('av-timeline');
+    if (m.daily && m.daily.length > 0) {
+      tl.innerHTML = m.daily.map(day => {
+        const pct = day.uptime_pct;
+        const color = pct >= 99 ? 'bg-green-500' : pct >= 95 ? 'bg-yellow-500' : 'bg-red-500';
+        const height = Math.max(4, Math.round(pct / 100 * 48));
+        return `<div class="flex-1 ${color} rounded-sm" style="height: ${height}px" title="${day.date}: ${pct.toFixed(2)}%"></div>`;
+      }).join('');
+    } else {
+      tl.innerHTML = '<div class="text-xs text-gray-600 py-3">No data yet — start recording checks.</div>';
+    }
+  } catch (e) {
+    console.error('Failed to load availability', e);
+  }
+}
+
+// Period selector
+document.querySelectorAll('.period-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.period-btn').forEach(b => {
+      b.className = 'period-btn text-xs px-3 py-1 rounded-lg border border-gray-700 text-gray-400 hover:text-white';
+    });
+    btn.className = 'period-btn text-xs px-3 py-1 rounded-lg border border-blue-600 text-blue-400 bg-blue-900/20';
+    loadAvailability(btn.dataset.period);
+  });
+});
+
 async function loadActivity() {
   try {
     const r = await fetch(API + '/admin/audit?limit=5', {
@@ -280,6 +374,7 @@ async function loadActivity() {
 
 refresh();
 loadActivity();
+loadAvailability('7d');
 setInterval(refresh, 30000);
 </script>
 
