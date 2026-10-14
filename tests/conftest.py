@@ -18,6 +18,8 @@ os.environ["AUTO_CREATE_TABLES"] = "1"
 os.environ["FLASK_DEBUG"] = "0"
 os.environ["ADMIN_API_KEY"] = "test_admin_key_for_ci_only"
 os.environ["WEBHOOK_SECRET"] = "test_webhook_secret"
+# Valid Fernet key (32 bytes base64 = 44 chars) — required by crypto.py
+os.environ["WEBHOOK_ENCRYPTION_KEY"] = "eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHg="
 
 # Ensure project root is on path
 sys.path.insert(0, str(Path(__file__).parent.parent))
